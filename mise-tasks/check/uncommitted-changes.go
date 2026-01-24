@@ -1,7 +1,7 @@
-//usr/local/go/bin/go run "$0" "$@"; exit
+/*usr/bin/env go run "$0" "$@" ; exit #*/
 
-//MISE description="Check generated code is checked-in"
-//MISE depends=["dev:fmt", "dev:gen"]
+// MISE description="Check generated code is checked-in"
+// MISE depends=["dev:fmt", "dev:gen"]
 
 //go:build ignore
 

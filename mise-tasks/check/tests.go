@@ -1,6 +1,6 @@
-//usr/local/go/bin/go run "$0" "$@"; exit
+/*usr/bin/env go run "$0" "$@" ; exit #*/
 
-//MISE description="Run Go tests"
+// MISE description="Run Go tests"
 
 //go:build ignore
 

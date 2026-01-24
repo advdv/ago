@@ -1,0 +1,132 @@
+version: "2"
+linters:
+  default: all
+  disable:
+    - canonicalheader
+    - containedctx
+    - dogsled
+    - dupl
+    - dupword
+    - err113
+    - exhaustruct
+    - funlen
+    - gochecknoglobals
+    - gochecknoinits
+    - goconst
+    - gomoddirectives
+    - ireturn
+    - maintidx
+    - mnd
+    - nlreturn
+    - nonamedreturns
+    - perfsprint
+    - thelper
+    - unparam
+    - wrapcheck
+    - wsl_v5
+    - wsl
+    - noinlineerr
+    - embeddedstructfieldcheck
+    - tagalign
+  settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^print(ln)?$
+        - pattern: ^fmt\.Print.*$
+          msg: Do not commit print statements.
+        - pattern: ^fmt\.Errorf.*$
+          msg: use 'github.com/cockroachdb/errors' for errors
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+    cyclop:
+      max-complexity: 30
+    depguard:
+      rules:
+        force_cockroachdb_errors:
+          list-mode: lax
+          files:
+            - $all
+          deny:
+            - pkg: errors
+              desc: use 'github.com/cockroachdb/errors' instead
+    revive:
+      rules:
+        - name: package-comments
+          disabled: true
+    funlen:
+      lines: 200
+    nlreturn:
+      block-size: 3
+    staticcheck:
+      checks:
+        - all
+        - "-ST1000"
+        - "-QF1008"
+    varnamelen:
+      max-distance: 15
+      ignore-names:
+        - id
+        - err
+        - db
+        - tx
+        - w
+        - r
+        - ok
+        - op # operation
+        - lc # lifecycle
+        - pk # partition key
+        - sk # sort key
+  exclusions:
+    generated: lax
+    presets:
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - interfacebloat
+        path: internal/rpc/rpc.go
+      - linters:
+          - paralleltest
+        path: testing/e2e/
+      - linters:
+          - dupl
+          - err113
+          - errcheck
+          - forcetypeassert
+          - gochecknoglobals
+          - gocyclo
+          - gosec
+          - lll
+          - nilnil
+          - nlreturn
+          - perfsprint
+          - revive
+          - varnamelen
+          - wrapcheck
+          - gocognit
+        path: _test\.go
+      - path: (.+)\.go$
+        text: ST1003
+    paths:
+      - infra/builds
+      - node_modules
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - infra/builds
+      - node_modules
+      - third_party$
+      - builtin$
+      - examples$

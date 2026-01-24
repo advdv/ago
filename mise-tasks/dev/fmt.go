@@ -1,6 +1,6 @@
-//usr/local/go/bin/go run "$0" "$@"; exit
+/*usr/bin/env go run "$0" "$@" ; exit #*/
 
-//MISE description="Format Go code using golangci-lint"
+// MISE description="Format Go code using golangci-lint"
 
 //go:build ignore
 

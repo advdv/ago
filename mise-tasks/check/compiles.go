@@ -1,6 +1,6 @@
-//usr/local/go/bin/go run "$0" "$@"; exit
+/*usr/bin/env go run "$0" "$@" ; exit #*/
 
-//MISE description="Check that all packages compile"
+// MISE description="Check that all packages compile"
 
 //go:build ignore
 
