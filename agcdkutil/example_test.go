@@ -65,25 +65,30 @@ func NewDeployment(stack awscdk.Stack, shared *Shared, deploymentIdent string) *
 func Example_setupApp() {
 	defer jsii.Close()
 
-	app := awscdk.NewApp(nil)
+	ctx := map[string]any{
+		"myapp-qualifier":              "myapp",
+		"myapp-primary-region":         "us-east-1",
+		"myapp-secondary-regions":      []any{"eu-west-1"},
+		"myapp-region-ident-us-east-1": "use1",
+		"myapp-region-ident-eu-west-1": "euw1",
+		"myapp-deployments":            []any{"Dev", "Stag", "Prod"},
+		"myapp-deployer-groups":        "myapp-deployers",
+		"myapp-base-domain-name":       "example.com",
+	}
+
+	app := awscdk.NewApp(&awscdk.AppProps{
+		Context: &ctx,
+	})
 
 	agcdkutil.SetupApp(app, agcdkutil.AppConfig{
-		// Prefix for all context keys (e.g., "myapp-qualifier", "myapp-primary-region")
-		Prefix: "myapp-",
-		// IAM group that can deploy to all environments including restricted ones
-		DeployersGroup: "myapp-deployers",
-		// Deployments that require DeployersGroup membership
+		Prefix:                "myapp-",
+		DeployersGroup:        "myapp-deployers",
 		RestrictedDeployments: []string{"Stag", "Prod"},
 	},
-		// SharedConstructor: called once per region to create shared infrastructure
-		func(stack awscdk.Stack) *Shared {
-			return NewShared(stack)
-		},
-		// DeploymentConstructor: called for each deployment in each region
+		NewShared,
 		func(stack awscdk.Stack, shared *Shared, deploymentIdent string) {
 			NewDeployment(stack, shared, deploymentIdent)
 		},
 	)
-
-	app.Synth(nil)
+	// Output:
 }

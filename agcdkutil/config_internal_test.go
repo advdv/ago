@@ -1,10 +1,11 @@
+//nolint:paralleltest // this test doesn't need parallel execution
 package agcdkutil
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
+	"github.com/cockroachdb/errors"
 	"github.com/go-playground/validator/v10"
 )
 
@@ -90,41 +91,46 @@ func TestValidateConfigRegionIdents(t *testing.T) {
 
 			err := validate.Struct(tt.config)
 
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("expected error but got nil")
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
 				}
 
-				var validationErrs validator.ValidationErrors
-				if !errors.As(err, &validationErrs) {
-					t.Fatalf("expected ValidationErrors, got %T", err)
-				}
-
-				// Format errors like NewConfig does
-				msgs := make([]string, 0, len(validationErrs))
-				for _, e := range validationErrs {
-					msgs = append(msgs, formatValidationError(e))
-				}
-				formatted := strings.Join(msgs, "\n")
-
-				for _, region := range tt.wantMissingRegions {
-					if !strings.Contains(formatted, region) {
-						t.Errorf("formatted error %q should contain region %q", formatted, region)
-					}
-				}
-
-				if !strings.Contains(formatted, "RegionIdents") {
-					t.Errorf("formatted error %q should contain 'RegionIdents'", formatted)
-				}
-				if !strings.Contains(formatted, "missing entry for region") {
-					t.Errorf("formatted error %q should contain 'missing entry for region'", formatted)
-				}
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			if err == nil {
+				t.Fatalf("expected error but got nil")
+			}
+
+			var validationErrs validator.ValidationErrors
+			if !errors.As(err, &validationErrs) {
+				t.Fatalf("expected ValidationErrors, got %T", err)
+			}
+
+			formatted := formatValidationErrors(validationErrs)
+
+			for _, region := range tt.wantMissingRegions {
+				if !strings.Contains(formatted, region) {
+					t.Errorf("formatted error %q should contain region %q", formatted, region)
+				}
+			}
+
+			if !strings.Contains(formatted, "RegionIdents") {
+				t.Errorf("formatted error %q should contain 'RegionIdents'", formatted)
+			}
+			if !strings.Contains(formatted, "missing entry for region") {
+				t.Errorf("formatted error %q should contain 'missing entry for region'", formatted)
 			}
 		})
 	}
+}
+
+func formatValidationErrors(errs validator.ValidationErrors) string {
+	msgs := make([]string, 0, len(errs))
+	for _, e := range errs {
+		msgs = append(msgs, formatValidationError(e))
+	}
+
+	return strings.Join(msgs, "\n")
 }

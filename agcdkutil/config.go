@@ -1,13 +1,14 @@
 package agcdkutil
 
 import (
-	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
+	"github.com/cockroachdb/errors"
 	"github.com/go-playground/validator/v10"
 )
 
@@ -79,6 +80,67 @@ type Config struct {
 	RestrictedDeployments []string `validate:"dive,required"`
 }
 
+// NewConfig reads and validates all CDK context values.
+// Returns an error if any required value is missing or invalid.
+func NewConfig(scope constructs.Construct, acfg AppConfig) (*Config, error) {
+	var readErrs []string
+
+	cfg := &Config{
+		Prefix:                acfg.Prefix,
+		DeployersGroup:        acfg.DeployersGroup,
+		RestrictedDeployments: acfg.RestrictedDeployments,
+	}
+
+	cfg.Qualifier, readErrs = readContextString(scope, acfg.Prefix+"qualifier", readErrs)
+	cfg.PrimaryRegion, readErrs = readContextString(scope, acfg.Prefix+"primary-region", readErrs)
+	cfg.SecondaryRegions, readErrs = readContextStringSlice(scope, acfg.Prefix+"secondary-regions", readErrs)
+	cfg.Deployments, readErrs = readContextStringSlice(scope, acfg.Prefix+"deployments", readErrs)
+	cfg.BaseDomainName, readErrs = readContextString(scope, acfg.Prefix+"base-domain-name", readErrs)
+
+	// Read region idents for all known regions
+	cfg.RegionIdents = make(map[string]string)
+	regions := []string{}
+	if cfg.PrimaryRegion != "" {
+		regions = append(regions, cfg.PrimaryRegion)
+	}
+	regions = append(regions, cfg.SecondaryRegions...)
+
+	for _, region := range regions {
+		key := acfg.Prefix + "region-ident-" + region
+		ident, errs := readContextString(scope, key, nil)
+		if len(errs) > 0 {
+			readErrs = append(readErrs, errs...)
+		} else {
+			cfg.RegionIdents[region] = ident
+		}
+	}
+
+	// DeployerGroups is optional (nil during bootstrap)
+	cfg.DeployerGroups = readOptionalDeployerGroups(scope, acfg.Prefix)
+
+	if len(readErrs) > 0 {
+		return nil, errors.Errorf("CDK context read errors:\n  - %s", strings.Join(readErrs, "\n  - "))
+	}
+
+	// Validate using struct tags and struct-level validation
+	validate := validator.New(validator.WithRequiredStructEnabled())
+	validate.RegisterStructValidation(validateConfigRegionIdents, Config{})
+
+	if err := validate.Struct(cfg); err != nil {
+		var validationErrs validator.ValidationErrors
+		if errors.As(err, &validationErrs) {
+			msgs := make([]string, 0, len(validationErrs))
+			for _, e := range validationErrs {
+				msgs = append(msgs, formatValidationError(e))
+			}
+			return nil, errors.Errorf("CDK context validation errors:\n  - %s", strings.Join(msgs, "\n  - "))
+		}
+		return nil, errors.Errorf("CDK context validation failed: %w", err)
+	}
+
+	return cfg, nil
+}
+
 // AllRegions returns the primary region plus all secondary regions.
 func (c *Config) AllRegions() []string {
 	return append([]string{c.PrimaryRegion}, c.SecondaryRegions...)
@@ -134,111 +196,36 @@ func (c *Config) AllowedDeployments() []string {
 		return nil
 	}
 
-	hasFullAccess := false
-	for _, g := range c.DeployerGroups {
-		if g == c.DeployersGroup {
-			hasFullAccess = true
-			break
-		}
-	}
-
-	if hasFullAccess {
+	if slices.Contains(c.DeployerGroups, c.DeployersGroup) {
 		return c.Deployments
 	}
 
 	allowed := make([]string, 0, len(c.Deployments))
 	for _, d := range c.Deployments {
-		isRestricted := false
-		for _, r := range c.RestrictedDeployments {
-			if d == r {
-				isRestricted = true
-				break
-			}
-		}
-		if !isRestricted {
+		if !slices.Contains(c.RestrictedDeployments, d) {
 			allowed = append(allowed, d)
 		}
 	}
 	return allowed
 }
 
-// NewConfig reads and validates all CDK context values.
-// Returns an error if any required value is missing or invalid.
-func NewConfig(scope constructs.Construct, cfg AppConfig) (*Config, error) {
-	var readErrs []string
-
-	c := &Config{
-		Prefix:                cfg.Prefix,
-		DeployersGroup:        cfg.DeployersGroup,
-		RestrictedDeployments: cfg.RestrictedDeployments,
-	}
-
-	c.Qualifier, readErrs = readContextString(scope, cfg.Prefix+"qualifier", readErrs)
-	c.PrimaryRegion, readErrs = readContextString(scope, cfg.Prefix+"primary-region", readErrs)
-	c.SecondaryRegions, readErrs = readContextStringSlice(scope, cfg.Prefix+"secondary-regions", readErrs)
-	c.Deployments, readErrs = readContextStringSlice(scope, cfg.Prefix+"deployments", readErrs)
-	c.BaseDomainName, readErrs = readContextString(scope, cfg.Prefix+"base-domain-name", readErrs)
-
-	// Read region idents for all known regions
-	c.RegionIdents = make(map[string]string)
-	regions := []string{}
-	if c.PrimaryRegion != "" {
-		regions = append(regions, c.PrimaryRegion)
-	}
-	regions = append(regions, c.SecondaryRegions...)
-
-	for _, region := range regions {
-		key := cfg.Prefix + "region-ident-" + region
-		ident, errs := readContextString(scope, key, nil)
-		if len(errs) > 0 {
-			readErrs = append(readErrs, errs...)
-		} else {
-			c.RegionIdents[region] = ident
-		}
-	}
-
-	// DeployerGroups is optional (nil during bootstrap)
-	c.DeployerGroups = readOptionalDeployerGroups(scope, cfg.Prefix)
-
-	if len(readErrs) > 0 {
-		return nil, fmt.Errorf("CDK context read errors:\n  - %s", strings.Join(readErrs, "\n  - "))
-	}
-
-	// Validate using struct tags and struct-level validation
-	validate := validator.New(validator.WithRequiredStructEnabled())
-	validate.RegisterStructValidation(validateConfigRegionIdents, Config{})
-
-	if err := validate.Struct(c); err != nil {
-		var validationErrs validator.ValidationErrors
-		if errors.As(err, &validationErrs) {
-			msgs := make([]string, 0, len(validationErrs))
-			for _, e := range validationErrs {
-				msgs = append(msgs, formatValidationError(e))
-			}
-			return nil, fmt.Errorf("CDK context validation errors:\n  - %s", strings.Join(msgs, "\n  - "))
-		}
-		return nil, fmt.Errorf("CDK context validation failed: %w", err)
-	}
-
-	return c, nil
-}
-
 // validateConfigRegionIdents ensures RegionIdents has entries for all regions.
-func validateConfigRegionIdents(sl validator.StructLevel) {
-	cfg := sl.Current().Interface().(Config)
+func validateConfigRegionIdents(structLevel validator.StructLevel) {
+	cfg, ok := structLevel.Current().Interface().(Config)
+	if !ok {
+		return
+	}
 
-	// Check primary region has ident
 	if cfg.PrimaryRegion != "" {
 		if _, ok := cfg.RegionIdents[cfg.PrimaryRegion]; !ok {
-			sl.ReportError(cfg.RegionIdents, "RegionIdents", "RegionIdents",
+			structLevel.ReportError(cfg.RegionIdents, "RegionIdents", "RegionIdents",
 				"missing_region_ident", cfg.PrimaryRegion)
 		}
 	}
 
-	// Check all secondary regions have idents
 	for _, region := range cfg.SecondaryRegions {
 		if _, ok := cfg.RegionIdents[region]; !ok {
-			sl.ReportError(cfg.RegionIdents, "RegionIdents", "RegionIdents",
+			structLevel.ReportError(cfg.RegionIdents, "RegionIdents", "RegionIdents",
 				"missing_region_ident", region)
 		}
 	}
