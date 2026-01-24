@@ -24,8 +24,8 @@ make sure that steps still need to be performed can be performed still.
 3. Use mise to install Node.js 22 (and npm): `mise u node@22`
 4. Use mise to install the AWS CDK toolkit: `mise u npm:aws-cdk`
 5. Use mise to install the AWS CLI: `mise u aws-cli`
-6. Use mise to install the 'ago' CLI: `mise u "go:github.com/advdv/ago/cmd/ago@ref:main"`
-+     - Use `@ref:main` to always pull the latest commit from the main branch (the tool is updated regularly)
+6. Use mise to install the 'ago' CLI: `GOPROXY=direct mise u "go:github.com/advdv/ago/cmd/ago@latest"`
+    - Use `GOPROXY=direct` to bypass the Go module proxy cache and get the absolute latest commit
 
 # Setup Linting
 6. Use mise to install golangci-lint: `mise u golangci-lint`
