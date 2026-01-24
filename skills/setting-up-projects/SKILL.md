@@ -32,7 +32,13 @@ make sure that steps still need to be performed can be performed still.
         - Uninstall is needed because mise won't reinstall if `@latest` is already present
     - Then install: `GOPROXY=direct mise u "go:github.com/advdv/ago/cmd/ago@latest"`
         - `GOPROXY=direct` bypasses the Go module proxy cache to get the absolute latest commit
-    
+7. Add mise tasks to `mise.toml` that proxy all `ago` CLI commands. For each ago subcommand (e.g., `ago check tests`, `ago dev fmt`), add:
+    ```toml
+    [tasks."<group>:<command>"]
+    run = "ago <group> <command>"
+    ```
+    - Run `ago --help` and `ago <subcommand> --help` to discover all available commands
+    - Use the same naming hierarchy (e.g., `check:tests`, `dev:fmt`)    
 
 # Setup Linting
 6. Use mise to install golangci-lint: `mise u golangci-lint`
