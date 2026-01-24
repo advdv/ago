@@ -22,14 +22,14 @@ func TestNewConfig(t *testing.T) {
 		{
 			name: "valid config",
 			context: map[string]any{
-				"myapp-qualifier":            "myapp",
-				"myapp-primary-region":       "us-east-1",
-				"myapp-secondary-regions":    []any{"eu-west-1"},
+				"myapp-qualifier":              "myapp",
+				"myapp-primary-region":         "us-east-1",
+				"myapp-secondary-regions":      []any{"eu-west-1"},
 				"myapp-region-ident-us-east-1": "use1",
 				"myapp-region-ident-eu-west-1": "euw1",
-				"myapp-deployments":          []any{"Dev", "Stag", "Prod"},
-				"myapp-deployer-groups":      "myapp-deployers",
-				"myapp-base-domain-name":     "example.com",
+				"myapp-deployments":            []any{"Dev", "Stag", "Prod"},
+				"myapp-deployer-groups":        "myapp-deployers",
+				"myapp-base-domain-name":       "example.com",
 			},
 			appConfig: agcdkutil.AppConfig{
 				Prefix:                "myapp-",
@@ -41,12 +41,12 @@ func TestNewConfig(t *testing.T) {
 		{
 			name: "valid config without secondary regions",
 			context: map[string]any{
-				"myapp-qualifier":            "myapp",
-				"myapp-primary-region":       "us-east-1",
-				"myapp-secondary-regions":    []any{},
+				"myapp-qualifier":              "myapp",
+				"myapp-primary-region":         "us-east-1",
+				"myapp-secondary-regions":      []any{},
 				"myapp-region-ident-us-east-1": "use1",
-				"myapp-deployments":          []any{"Dev"},
-				"myapp-base-domain-name":     "example.com",
+				"myapp-deployments":            []any{"Dev"},
+				"myapp-base-domain-name":       "example.com",
 			},
 			appConfig: agcdkutil.AppConfig{
 				Prefix:         "myapp-",
@@ -57,11 +57,11 @@ func TestNewConfig(t *testing.T) {
 		{
 			name: "missing qualifier",
 			context: map[string]any{
-				"myapp-primary-region":       "us-east-1",
-				"myapp-secondary-regions":    []any{},
+				"myapp-primary-region":         "us-east-1",
+				"myapp-secondary-regions":      []any{},
 				"myapp-region-ident-us-east-1": "use1",
-				"myapp-deployments":          []any{"Dev"},
-				"myapp-base-domain-name":     "example.com",
+				"myapp-deployments":            []any{"Dev"},
+				"myapp-base-domain-name":       "example.com",
 			},
 			appConfig: agcdkutil.AppConfig{
 				Prefix:         "myapp-",
@@ -73,12 +73,12 @@ func TestNewConfig(t *testing.T) {
 		{
 			name: "qualifier too long",
 			context: map[string]any{
-				"myapp-qualifier":            "thisqualifieristoolong",
-				"myapp-primary-region":       "us-east-1",
-				"myapp-secondary-regions":    []any{},
+				"myapp-qualifier":              "thisqualifieristoolong",
+				"myapp-primary-region":         "us-east-1",
+				"myapp-secondary-regions":      []any{},
 				"myapp-region-ident-us-east-1": "use1",
-				"myapp-deployments":          []any{"Dev"},
-				"myapp-base-domain-name":     "example.com",
+				"myapp-deployments":            []any{"Dev"},
+				"myapp-base-domain-name":       "example.com",
 			},
 			appConfig: agcdkutil.AppConfig{
 				Prefix:         "myapp-",
@@ -90,12 +90,12 @@ func TestNewConfig(t *testing.T) {
 		{
 			name: "invalid base domain name",
 			context: map[string]any{
-				"myapp-qualifier":            "myapp",
-				"myapp-primary-region":       "us-east-1",
-				"myapp-secondary-regions":    []any{},
+				"myapp-qualifier":              "myapp",
+				"myapp-primary-region":         "us-east-1",
+				"myapp-secondary-regions":      []any{},
 				"myapp-region-ident-us-east-1": "use1",
-				"myapp-deployments":          []any{"Dev"},
-				"myapp-base-domain-name":     "not a valid domain",
+				"myapp-deployments":            []any{"Dev"},
+				"myapp-base-domain-name":       "not a valid domain",
 			},
 			appConfig: agcdkutil.AppConfig{
 				Prefix:         "myapp-",
@@ -155,12 +155,12 @@ func TestNewConfig(t *testing.T) {
 		{
 			name: "wrong type for qualifier",
 			context: map[string]any{
-				"myapp-qualifier":            123, // should be string
-				"myapp-primary-region":       "us-east-1",
-				"myapp-secondary-regions":    []any{},
+				"myapp-qualifier":              123, // should be string
+				"myapp-primary-region":         "us-east-1",
+				"myapp-secondary-regions":      []any{},
 				"myapp-region-ident-us-east-1": "use1",
-				"myapp-deployments":          []any{"Dev"},
-				"myapp-base-domain-name":     "example.com",
+				"myapp-deployments":            []any{"Dev"},
+				"myapp-base-domain-name":       "example.com",
 			},
 			appConfig: agcdkutil.AppConfig{
 				Prefix:         "myapp-",
@@ -172,12 +172,12 @@ func TestNewConfig(t *testing.T) {
 		{
 			name: "wrong type for deployments",
 			context: map[string]any{
-				"myapp-qualifier":            "myapp",
-				"myapp-primary-region":       "us-east-1",
-				"myapp-secondary-regions":    []any{},
+				"myapp-qualifier":              "myapp",
+				"myapp-primary-region":         "us-east-1",
+				"myapp-secondary-regions":      []any{},
 				"myapp-region-ident-us-east-1": "use1",
-				"myapp-deployments":          "Dev", // should be array
-				"myapp-base-domain-name":     "example.com",
+				"myapp-deployments":            "Dev", // should be array
+				"myapp-base-domain-name":       "example.com",
 			},
 			appConfig: agcdkutil.AppConfig{
 				Prefix:         "myapp-",
@@ -228,14 +228,14 @@ func TestConfig_AllRegions(t *testing.T) {
 
 	app := awscdk.NewApp(&awscdk.AppProps{
 		Context: &map[string]any{
-			"myapp-qualifier":              "myapp",
-			"myapp-primary-region":         "us-east-1",
-			"myapp-secondary-regions":      []any{"eu-west-1", "ap-southeast-1"},
-			"myapp-region-ident-us-east-1": "use1",
-			"myapp-region-ident-eu-west-1": "euw1",
+			"myapp-qualifier":                   "myapp",
+			"myapp-primary-region":              "us-east-1",
+			"myapp-secondary-regions":           []any{"eu-west-1", "ap-southeast-1"},
+			"myapp-region-ident-us-east-1":      "use1",
+			"myapp-region-ident-eu-west-1":      "euw1",
 			"myapp-region-ident-ap-southeast-1": "apse1",
-			"myapp-deployments":            []any{"Dev"},
-			"myapp-base-domain-name":       "example.com",
+			"myapp-deployments":                 []any{"Dev"},
+			"myapp-base-domain-name":            "example.com",
 		},
 	})
 
@@ -264,27 +264,27 @@ func TestConfig_AllRegions(t *testing.T) {
 
 func TestConfig_AllowedDeployments(t *testing.T) {
 	tests := []struct {
-		name           string
-		deployerGroups string
-		wantLen        int
+		name            string
+		deployerGroups  string
+		wantLen         int
 		wantDeployments []string
 	}{
 		{
-			name:           "full deployer has all",
-			deployerGroups: "myapp-deployers",
-			wantLen:        3,
+			name:            "full deployer has all",
+			deployerGroups:  "myapp-deployers",
+			wantLen:         3,
 			wantDeployments: []string{"Dev", "Stag", "Prod"},
 		},
 		{
-			name:           "limited deployer has only Dev",
-			deployerGroups: "limited-group",
-			wantLen:        1,
+			name:            "limited deployer has only Dev",
+			deployerGroups:  "limited-group",
+			wantLen:         1,
 			wantDeployments: []string{"Dev"},
 		},
 		{
-			name:           "no groups returns nil",
-			deployerGroups: "",
-			wantLen:        0,
+			name:            "no groups returns nil",
+			deployerGroups:  "",
+			wantLen:         0,
 			wantDeployments: nil,
 		},
 	}

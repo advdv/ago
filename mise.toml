@@ -1,3 +1,4 @@
 [tools]
 amp = "latest"
 go = "latest"
+golangci-lint = "latest"

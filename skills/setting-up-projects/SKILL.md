@@ -24,6 +24,7 @@ make sure that steps still need to be performed can be performed still.
 3. Use mise to install Node.js 22 (and npm): `mise u node@22`
 4. Use mise to install the AWS CDK toolkit: `mise u npm:aws-cdk`
 5. Use mise to install the AWS CLI: `mise u aws-cli`
+6. Use mise to install golangci-lint: `mise u golangci-lint`
 
 ## Setup infrastructure-as-code using AWS CDK
 6. Use the AWS CDK cli to initialize a Go CDK project in the `/infra/cdk/cdk` directory (use `cdk init` with appropriate options for a Go app)

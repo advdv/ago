@@ -10,9 +10,9 @@ import (
 
 func TestValidateConfigRegionIdents(t *testing.T) {
 	tests := []struct {
-		name              string
-		config            Config
-		wantErr           bool
+		name               string
+		config             Config
+		wantErr            bool
 		wantMissingRegions []string
 	}{
 		{
