@@ -24,6 +24,8 @@ make sure that steps still need to be performed can be performed still.
 3. Use mise to install Node.js 22 (and npm): `mise u node@22`
 4. Use mise to install the AWS CDK toolkit: `mise u npm:aws-cdk`
 5. Use mise to install the AWS CLI: `mise u aws-cli`
+6. Use Go's tools feature to install the 'ago' cli from: github.com/advdv/ago/tree/main/cmd/ago
+    - Make you always force the latest version to be installed
 
 # Setup Linting
 6. Use mise to install golangci-lint: `mise u golangci-lint`
