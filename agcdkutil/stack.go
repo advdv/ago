@@ -12,9 +12,18 @@ import (
 )
 
 // NewStack creates a new CDK Stack, either shared or multi-deployment.
+// Deprecated: Use NewStackFromConfig instead for upfront validation.
 func NewStack(scope constructs.Construct, prefix, region string, deploymentIdent ...string) awscdk.Stack {
 	qual, regionAcronym := QualifierFromContext(scope, prefix), RegionAcronymIdentFromContext(scope, prefix, region)
+	return newStackInternal(scope, qual, regionAcronym, region, deploymentIdent...)
+}
 
+// NewStackFromConfig creates a new CDK Stack using a validated Config.
+func NewStackFromConfig(scope constructs.Construct, cfg *Config, region string, deploymentIdent ...string) awscdk.Stack {
+	return newStackInternal(scope, cfg.Qualifier, cfg.RegionIdent(region), region, deploymentIdent...)
+}
+
+func newStackInternal(scope constructs.Construct, qual, regionAcronym, region string, deploymentIdent ...string) awscdk.Stack {
 	qualifier := strcase.ToLowerCamel(fmt.Sprintf("%s-%s", qual, regionAcronym))
 	stackName := jsii.Sprintf("%sShared", qualifier)
 

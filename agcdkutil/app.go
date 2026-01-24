@@ -32,36 +32,43 @@ type AppConfig struct {
 //  4. Secondary deployment stacks for each secondary region (dependent on primary deployment)
 //
 // The type parameter S represents the shared construct type returned by SharedConstructor.
+// SetupApp validates all context values upfront and panics with a clear error message
+// if any required values are missing or invalid.
 func SetupApp[S any](
 	app awscdk.App,
 	cfg AppConfig,
 	newShared SharedConstructor[S],
 	newDeployment DeploymentConstructor[S],
 ) {
+	// Validate all context values upfront and store in construct tree
+	config, err := NewConfig(app, cfg)
+	if err != nil {
+		panic(err)
+	}
+	StoreConfig(app, config)
+
 	// Create shared primary region stack first
-	primaryRegion := PrimaryRegion(app, cfg.Prefix)
-	primarySharedStack := NewStack(app, cfg.Prefix, primaryRegion)
+	primarySharedStack := NewStackFromConfig(app, config, config.PrimaryRegion)
 	primaryShared := newShared(primarySharedStack)
 
 	// Create secondary shared region stacks with dependency on primary
 	secondaryShared := map[string]S{}
-	for _, region := range SecondaryRegions(app, cfg.Prefix) {
-		secondarySharedStack := NewStack(app, cfg.Prefix, region)
+	for _, region := range config.SecondaryRegions {
+		secondarySharedStack := NewStackFromConfig(app, config, region)
 		secondaryShared[region] = newShared(secondarySharedStack)
 		secondarySharedStack.AddDependency(primarySharedStack, jsii.String("Primary region must deploy first"))
 	}
 
 	// Create stacks for each allowed deployment
-	allowedDeployments := AllowedDeployments(app, cfg.Prefix, cfg.DeployersGroup, cfg.RestrictedDeployments)
-	for _, deploymentIdent := range allowedDeployments {
-		primaryDeploymentStack := NewStack(app, cfg.Prefix, primaryRegion, deploymentIdent)
+	for _, deploymentIdent := range config.AllowedDeployments() {
+		primaryDeploymentStack := NewStackFromConfig(app, config, config.PrimaryRegion, deploymentIdent)
 		newDeployment(primaryDeploymentStack, primaryShared, deploymentIdent)
 		primaryDeploymentStack.AddDependency(primarySharedStack,
 			jsii.String("Primary shared stack must deploy first"))
 
 		// Secondary region stacks for each deployment
-		for _, region := range SecondaryRegions(app, cfg.Prefix) {
-			secondaryDeploymentStack := NewStack(app, cfg.Prefix, region, deploymentIdent)
+		for _, region := range config.SecondaryRegions {
+			secondaryDeploymentStack := NewStackFromConfig(app, config, region, deploymentIdent)
 			newDeployment(secondaryDeploymentStack, secondaryShared[region], deploymentIdent)
 			secondaryDeploymentStack.AddDependency(primaryDeploymentStack,
 				jsii.String("Primary region deployment must deploy first"))
