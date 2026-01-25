@@ -131,6 +131,10 @@ func doCreateProjectAccount(ctx context.Context, opts createAccountOptions) erro
 		if err := updateCDKContextProfile(opts, profileName); err != nil {
 			return err
 		}
+
+		if err := updateCDKJSONProfile(opts, profileName); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -223,6 +227,33 @@ func updateCDKContextProfile(opts createAccountOptions, profileName string) erro
 
 	if err := os.WriteFile(contextPath, output, 0o644); err != nil { //nolint:gosec // config file needs to be readable
 		return errors.Wrap(err, "failed to write cdk.context.json")
+	}
+
+	return nil
+}
+
+func updateCDKJSONProfile(opts createAccountOptions, profileName string) error {
+	cdkJSONPath := filepath.Join(opts.ProjectDir, "infra", "cdk", "cdk", "cdk.json")
+
+	data, err := os.ReadFile(cdkJSONPath)
+	if err != nil {
+		return errors.Wrap(err, "failed to read cdk.json")
+	}
+
+	var cdkJSON map[string]any
+	if err := json.Unmarshal(data, &cdkJSON); err != nil {
+		return errors.Wrap(err, "failed to parse cdk.json")
+	}
+
+	cdkJSON["profile"] = profileName
+
+	output, err := json.MarshalIndent(cdkJSON, "", "  ")
+	if err != nil {
+		return errors.Wrap(err, "failed to marshal cdk.json")
+	}
+
+	if err := os.WriteFile(cdkJSONPath, output, 0o644); err != nil { //nolint:gosec // config file needs to be readable
+		return errors.Wrap(err, "failed to write cdk.json")
 	}
 
 	return nil

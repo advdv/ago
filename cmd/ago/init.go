@@ -168,7 +168,19 @@ func initCmd() *cli.Command {
 		Name:      "init",
 		Usage:     "Initialize a new ago project",
 		ArgsUsage: "[directory]",
-		Action:    runInit,
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "management-profile",
+				Usage:    "AWS profile for the management account (used to create project account)",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:  "region",
+				Usage: "AWS region for the project account",
+				Value: "eu-central-1",
+			},
+		},
+		Action: runInit,
 	}
 }
 
@@ -182,19 +194,29 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return errors.Wrap(err, "failed to get absolute path")
+	}
+	dir = absDir
+
 	return doInit(ctx, InitOptions{
-		Dir:        dir,
-		MiseConfig: DefaultMiseConfig(),
-		CDKConfig:  DefaultCDKConfigFromDir(dir),
-		RunInstall: true,
+		Dir:               dir,
+		MiseConfig:        DefaultMiseConfig(),
+		CDKConfig:         DefaultCDKConfigFromDir(dir),
+		RunInstall:        true,
+		ManagementProfile: cmd.String("management-profile"),
+		Region:            cmd.String("region"),
 	})
 }
 
 type InitOptions struct {
-	Dir        string
-	MiseConfig MiseConfig
-	CDKConfig  CDKConfig
-	RunInstall bool
+	Dir               string
+	MiseConfig        MiseConfig
+	CDKConfig         CDKConfig
+	RunInstall        bool
+	ManagementProfile string
+	Region            string
 }
 
 func doInit(ctx context.Context, opts InitOptions) error {
@@ -241,6 +263,18 @@ func doInit(ctx context.Context, opts InitOptions) error {
 	}
 
 	if err := writeAccountStackTemplate(opts.Dir, opts.CDKConfig); err != nil {
+		return err
+	}
+
+	projectName := filepath.Base(opts.Dir)
+	if err := doCreateProjectAccount(ctx, createAccountOptions{
+		ProjectDir:        opts.Dir,
+		ProjectName:       projectName,
+		ManagementProfile: opts.ManagementProfile,
+		Region:            opts.Region,
+		WriteProfile:      true,
+		Output:            os.Stdout,
+	}); err != nil {
 		return err
 	}
 
