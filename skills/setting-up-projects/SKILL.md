@@ -54,3 +54,5 @@ make sure that steps still need to be performed can be performed still.
     - the README.md that was created as part of the setup
 11. Use the "setting-up-cdk-app" skill to replace the boilerpalte CDK code. 
     - If no existing "Shared" and "Deployment" structs exist, create empty ones in /infra/cdk
+
+## Run the check task
