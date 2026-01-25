@@ -32,7 +32,7 @@ go.work.sum
 # .vscode/
 
 # compiled ago
-ago
+/ago
 
 # test dir
 t1

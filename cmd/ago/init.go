@@ -87,17 +87,44 @@ type CDKConfig struct {
 	BaseDomainName   string
 	Deployments      []string
 	ModuleName       string
+	EmailPattern     string
 }
+
+var accountStackTemplate = template.Must(template.New("account-stack.yaml").Parse(
+	`AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates an AWS Organizations account for project {{.Qualifier}}
+
+Resources:
+  ProjectAccount:
+    Type: AWS::Organizations::Account
+    Properties:
+      AccountName: {{.Qualifier}}
+      Email: {{.Email}}
+      RoleName: OrganizationAccountAccessRole
+
+Outputs:
+  AccountId:
+    Description: The AWS Account ID of the created account
+    Value: !GetAtt ProjectAccount.AccountId
+    Export:
+      Name: {{.Qualifier}}-AccountId
+  AccountArn:
+    Description: The ARN of the created account
+    Value: !GetAtt ProjectAccount.Arn
+    Export:
+      Name: {{.Qualifier}}-AccountArn
+`))
 
 func DefaultCDKConfigFromDir(dir string) CDKConfig {
 	name := filepath.Base(dir)
 	return CDKConfig{
 		Prefix:           name + "-",
 		Qualifier:        name,
-		PrimaryRegion:    "us-east-1",
+		PrimaryRegion:    "eu-central-1",
 		SecondaryRegions: []string{},
 		BaseDomainName:   "example.com",
 		Deployments:      []string{"Prod", "Stag", "Dev1", "Dev2", "Dev3"},
+		EmailPattern:     "admin+{project}@example.com",
 	}
 }
 
@@ -210,6 +237,10 @@ func doInit(ctx context.Context, opts InitOptions) error {
 	}
 
 	if err := configureCDKProject(ctx, opts.Dir, opts.CDKConfig); err != nil {
+		return err
+	}
+
+	if err := writeAccountStackTemplate(opts.Dir, opts.CDKConfig); err != nil {
 		return err
 	}
 
@@ -340,6 +371,36 @@ func writeCDKGoFiles(cdkPkgDir, cdkDir string, cfg CDKConfig) error {
 		if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil { //nolint:gosec // source file needs to be readable
 			return errors.Wrapf(err, "failed to write %s", filename)
 		}
+	}
+
+	return nil
+}
+
+func writeAccountStackTemplate(dir string, cfg CDKConfig) error {
+	cfnDir := filepath.Join(dir, "infra", "cfn")
+	if err := os.MkdirAll(cfnDir, 0o755); err != nil {
+		return errors.Wrap(err, "failed to create infra/cfn directory")
+	}
+
+	email := strings.ReplaceAll(cfg.EmailPattern, "{project}", cfg.Qualifier)
+
+	data := struct {
+		Qualifier string
+		Email     string
+	}{
+		Qualifier: cfg.Qualifier,
+		Email:     email,
+	}
+
+	var buf bytes.Buffer
+	if err := accountStackTemplate.Execute(&buf, data); err != nil {
+		return errors.Wrap(err, "failed to execute account stack template")
+	}
+
+	templatePath := filepath.Join(cfnDir, "account-stack.yaml")
+	//nolint:gosec // config file needs to be readable
+	if err := os.WriteFile(templatePath, buf.Bytes(), 0o644); err != nil {
+		return errors.Wrap(err, "failed to write account-stack.yaml")
 	}
 
 	return nil
@@ -476,7 +537,7 @@ func installAmpSkills(ctx context.Context, dir string, skills []string) error {
 
 // installAgoCLI installs the ago CLI tool using mise.
 //
-// This process requires special handling for two reasons:
+// This process requires special handling for three reasons:
 //
 //  1. GOPROXY=direct is required to bypass the Go module proxy cache.
 //     The proxy can cache module versions for up to 24 hours, so without
@@ -486,22 +547,29 @@ func installAmpSkills(ctx context.Context, dir string, skills []string) error {
 //     Mise considers "@latest" as already installed if present, and won't
 //     reinstall even if a newer commit exists. Uninstalling first forces
 //     mise to fetch and install the current latest version.
+//
+//  3. GOFLAGS=-mod=mod prevents Go from using a parent go.mod file.
+//     If the new project is created inside an existing Go module (e.g., ago/t1),
+//     Go would otherwise try to resolve the package within that module context,
+//     causing "invalid import path" errors.
 func installAgoCLI(ctx context.Context, dir string) error {
 	const agoPackage = "go:github.com/advdv/ago/cmd/ago@latest"
+
+	env := append(os.Environ(), "GOPROXY=direct", "GOFLAGS=-mod=mod")
 
 	// First uninstall any existing version. This is necessary because mise
 	// won't reinstall if @latest is already present, even if there's a newer commit.
 	// We ignore errors here since the package might not be installed yet.
 	uninstallCmd := exec.CommandContext(ctx, "mise", "uninstall", agoPackage)
 	uninstallCmd.Dir = dir
-	uninstallCmd.Env = append(os.Environ(), "GOPROXY=direct")
+	uninstallCmd.Env = env
 	_ = uninstallCmd.Run() // Ignore error - package might not exist
 
 	// Install the latest version, bypassing the Go module proxy cache
 	// to ensure we get the absolute latest commit.
 	installCmd := exec.CommandContext(ctx, "mise", "use", agoPackage)
 	installCmd.Dir = dir
-	installCmd.Env = append(os.Environ(), "GOPROXY=direct")
+	installCmd.Env = env
 	installCmd.Stdout = os.Stdout
 	installCmd.Stderr = os.Stderr
 	if err := installCmd.Run(); err != nil {

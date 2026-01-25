@@ -13,6 +13,7 @@ func main() {
 		Name:  "ago",
 		Usage: "Development task runner for the ago project",
 		Commands: []*cli.Command{
+			cdkCmd(),
 			checkCmd(),
 			devCmd(),
 			initCmd(),
