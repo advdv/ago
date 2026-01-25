@@ -93,6 +93,14 @@ func doInit(ctx context.Context, opts InitOptions) error {
 		}
 	}
 
+	if err := installAgoCLI(ctx, opts.Dir); err != nil {
+		return err
+	}
+
+	if err := installAmpSkills(ctx, opts.Dir, defaultSkills); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -162,5 +170,61 @@ func runMiseInstall(ctx context.Context, dir string) error {
 	if err := cmd.Run(); err != nil {
 		return errors.Wrap(err, "mise install failed")
 	}
+	return nil
+}
+
+var defaultSkills = []string{
+	"solid-principles",
+	"setting-up-cdk-app",
+}
+
+func installAmpSkills(ctx context.Context, dir string, skills []string) error {
+	for _, skill := range skills {
+		skillURL := "https://github.com/advdv/ago/tree/main/.agents/skills/" + skill
+		cmd := exec.CommandContext(ctx, "amp", "skill", "add", skillURL)
+		cmd.Dir = dir
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return errors.Wrapf(err, "failed to install amp skill %q", skill)
+		}
+	}
+	return nil
+}
+
+// installAgoCLI installs the ago CLI tool using mise.
+//
+// This process requires special handling for two reasons:
+//
+//  1. GOPROXY=direct is required to bypass the Go module proxy cache.
+//     The proxy can cache module versions for up to 24 hours, so without
+//     this flag, users might not get the absolute latest commit.
+//
+//  2. We must first uninstall any existing version before installing.
+//     Mise considers "@latest" as already installed if present, and won't
+//     reinstall even if a newer commit exists. Uninstalling first forces
+//     mise to fetch and install the current latest version.
+func installAgoCLI(ctx context.Context, dir string) error {
+	const agoPackage = "go:github.com/advdv/ago/cmd/ago@latest"
+
+	// First uninstall any existing version. This is necessary because mise
+	// won't reinstall if @latest is already present, even if there's a newer commit.
+	// We ignore errors here since the package might not be installed yet.
+	uninstallCmd := exec.CommandContext(ctx, "mise", "uninstall", agoPackage)
+	uninstallCmd.Dir = dir
+	uninstallCmd.Env = append(os.Environ(), "GOPROXY=direct")
+	_ = uninstallCmd.Run() // Ignore error - package might not exist
+
+	// Install the latest version, bypassing the Go module proxy cache
+	// to ensure we get the absolute latest commit.
+	installCmd := exec.CommandContext(ctx, "mise", "use", agoPackage)
+	installCmd.Dir = dir
+	installCmd.Env = append(os.Environ(), "GOPROXY=direct")
+	installCmd.Stdout = os.Stdout
+	installCmd.Stderr = os.Stderr
+	if err := installCmd.Run(); err != nil {
+		return errors.Wrap(err, "failed to install ago CLI")
+	}
+
 	return nil
 }
