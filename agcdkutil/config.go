@@ -66,14 +66,13 @@ func PrimaryRegion(scope constructs.Construct) string {
 // Config holds all CDK context values validated upfront.
 // It centralizes context reading and validation to provide clear error messages.
 type Config struct {
-	Prefix           string            `validate:"required"`
-	Qualifier        string            `validate:"required,max=10"`
-	PrimaryRegion    string            `validate:"required"`
-	SecondaryRegions []string          `validate:"dive,required"`
-	RegionIdents     map[string]string `validate:"required,dive,required"`
-	Deployments      []string          `validate:"required,dive,required"`
-	DeployerGroups   []string          // nil during bootstrap, optional
-	BaseDomainName   string            `validate:"required,fqdn"`
+	Prefix           string   `validate:"required"`
+	Qualifier        string   `validate:"required,max=10"`
+	PrimaryRegion    string   `validate:"required"`
+	SecondaryRegions []string `validate:"dive,required"`
+	Deployments      []string `validate:"required,dive,required"`
+	DeployerGroups   []string // nil during bootstrap, optional
+	BaseDomainName   string   `validate:"required,fqdn"`
 
 	// From AppConfig (not context)
 	DeployersGroup        string   `validate:"required"`
@@ -97,21 +96,15 @@ func NewConfig(scope constructs.Construct, acfg AppConfig) (*Config, error) {
 	cfg.Deployments, readErrs = readContextStringSlice(scope, acfg.Prefix+"deployments", readErrs)
 	cfg.BaseDomainName, readErrs = readContextString(scope, acfg.Prefix+"base-domain-name", readErrs)
 
-	// Read region idents for all known regions
-	cfg.RegionIdents = make(map[string]string)
-	regions := []string{}
-	if cfg.PrimaryRegion != "" {
-		regions = append(regions, cfg.PrimaryRegion)
+	// Validate that all regions are known
+	if cfg.PrimaryRegion != "" && !IsKnownRegion(cfg.PrimaryRegion) {
+		readErrs = append(readErrs, fmt.Sprintf(
+			"unknown primary region %q - add it to agcdkutil.RegionIdents", cfg.PrimaryRegion))
 	}
-	regions = append(regions, cfg.SecondaryRegions...)
-
-	for _, region := range regions {
-		key := acfg.Prefix + "region-ident-" + region
-		ident, errs := readContextString(scope, key, nil)
-		if len(errs) > 0 {
-			readErrs = append(readErrs, errs...)
-		} else {
-			cfg.RegionIdents[region] = ident
+	for _, region := range cfg.SecondaryRegions {
+		if !IsKnownRegion(region) {
+			readErrs = append(readErrs, fmt.Sprintf(
+				"unknown secondary region %q - add it to agcdkutil.RegionIdents", region))
 		}
 	}
 
@@ -122,9 +115,8 @@ func NewConfig(scope constructs.Construct, acfg AppConfig) (*Config, error) {
 		return nil, errors.Errorf("CDK context read errors:\n  - %s", strings.Join(readErrs, "\n  - "))
 	}
 
-	// Validate using struct tags and struct-level validation
+	// Validate using struct tags
 	validate := validator.New(validator.WithRequiredStructEnabled())
-	validate.RegisterStructValidation(validateConfigRegionIdents, Config{})
 
 	if err := validate.Struct(cfg); err != nil {
 		var validationErrs validator.ValidationErrors
@@ -148,7 +140,7 @@ func (c *Config) AllRegions() []string {
 
 // RegionIdent returns the acronym identifier for a region.
 func (c *Config) RegionIdent(region string) string {
-	return c.RegionIdents[region]
+	return RegionIdentFor(region)
 }
 
 // IsPrimaryRegion checks if the given region is the primary region.
@@ -209,28 +201,6 @@ func (c *Config) AllowedDeployments() []string {
 	return allowed
 }
 
-// validateConfigRegionIdents ensures RegionIdents has entries for all regions.
-func validateConfigRegionIdents(structLevel validator.StructLevel) {
-	cfg, ok := structLevel.Current().Interface().(Config)
-	if !ok {
-		return
-	}
-
-	if cfg.PrimaryRegion != "" {
-		if _, ok := cfg.RegionIdents[cfg.PrimaryRegion]; !ok {
-			structLevel.ReportError(cfg.RegionIdents, "RegionIdents", "RegionIdents",
-				"missing_region_ident", cfg.PrimaryRegion)
-		}
-	}
-
-	for _, region := range cfg.SecondaryRegions {
-		if _, ok := cfg.RegionIdents[region]; !ok {
-			structLevel.ReportError(cfg.RegionIdents, "RegionIdents", "RegionIdents",
-				"missing_region_ident", region)
-		}
-	}
-}
-
 func formatValidationError(e validator.FieldError) string {
 	switch e.Tag() {
 	case "required":
@@ -239,8 +209,6 @@ func formatValidationError(e validator.FieldError) string {
 		return fmt.Sprintf("%s exceeds maximum length of %s (got %q)", e.Field(), e.Param(), e.Value())
 	case "fqdn":
 		return fmt.Sprintf("%s must be a valid domain name (got %q)", e.Field(), e.Value())
-	case "missing_region_ident":
-		return fmt.Sprintf("%s is missing entry for region %q", e.Field(), e.Param())
 	default:
 		return fmt.Sprintf("%s failed validation %q", e.Field(), e.Tag())
 	}

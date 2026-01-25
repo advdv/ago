@@ -345,28 +345,13 @@ func writeCDKGoFiles(cdkPkgDir, cdkDir string, cfg CDKConfig) error {
 	return nil
 }
 
-var knownRegionIdents = map[string]string{
-	"us-east-1":      "use1",
-	"us-west-2":      "usw2",
-	"eu-west-1":      "euw1",
-	"eu-central-1":   "euc1",
-	"ap-northeast-1": "apne1",
-}
-
 func writeCDKContextJSON(cdkDir string, cfg CDKConfig) error {
 	context := map[string]any{
-		cfg.Prefix + "qualifier":        cfg.Qualifier,
-		cfg.Prefix + "primary-region":   cfg.PrimaryRegion,
+		cfg.Prefix + "qualifier":         cfg.Qualifier,
+		cfg.Prefix + "primary-region":    cfg.PrimaryRegion,
 		cfg.Prefix + "secondary-regions": cfg.SecondaryRegions,
-		cfg.Prefix + "deployments":      cfg.Deployments,
-		cfg.Prefix + "base-domain-name": cfg.BaseDomainName,
-	}
-
-	allRegions := append([]string{cfg.PrimaryRegion}, cfg.SecondaryRegions...)
-	for _, region := range allRegions {
-		if ident, ok := knownRegionIdents[region]; ok {
-			context[cfg.Prefix+"region-ident-"+region] = ident
-		}
+		cfg.Prefix + "deployments":       cfg.Deployments,
+		cfg.Prefix + "base-domain-name":  cfg.BaseDomainName,
 	}
 
 	output, err := json.MarshalIndent(context, "", "  ")
