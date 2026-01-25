@@ -20,11 +20,11 @@ func QualifierFromContext(scope constructs.Construct, prefix string) string {
 	return qual
 }
 
-// RegionAcronymIdentFromContext gets region-specific identifier from context.
+// RegionAcronymIdentFromContext returns the 4-character identifier for a region.
 //
-// Deprecated: Use NewConfig and Config.RegionIdent instead for upfront validation.
-func RegionAcronymIdentFromContext(scope constructs.Construct, prefix, region string) string {
-	return stringContext(scope, prefix+"region-ident-"+region)
+// Deprecated: Use RegionIdentFor(region) directly instead.
+func RegionAcronymIdentFromContext(_ constructs.Construct, _, region string) string {
+	return RegionIdentFor(region)
 }
 
 // stringContext retrieves a string context value, panicking if not set.
