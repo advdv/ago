@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"github.com/cockroachdb/errors"
@@ -19,6 +21,102 @@ node = "{{.NodeVersion}}"
 aws-cli = "{{.AwsCliVersion}}"
 amp = "{{.AmpVersion}}"
 `))
+
+var cdkMainTemplate = template.Must(template.New("cdk.go").Parse(`package main
+
+import (
+	"{{.ModuleName}}/cdk"
+
+	"github.com/advdv/ago/agcdkutil"
+	"github.com/aws/aws-cdk-go/awscdk/v2"
+	"github.com/aws/jsii-runtime-go"
+)
+
+func main() {
+	defer jsii.Close()
+	app := awscdk.NewApp(nil)
+
+	agcdkutil.SetupApp(app, agcdkutil.AppConfig{
+		Prefix:                "{{.Prefix}}",
+		DeployersGroup:        "{{.Qualifier}}-deployers",
+		RestrictedDeployments: []string{"Stag", "Prod"},
+	},
+		func(stack awscdk.Stack) *cdk.Shared { return cdk.NewShared(stack) },
+		func(stack awscdk.Stack, shared *cdk.Shared, deploymentIdent string) {
+			cdk.NewDeployment(stack, shared, deploymentIdent)
+		},
+	)
+
+	app.Synth(nil)
+}
+`))
+
+var cdkSharedTemplate = template.Must(template.New("shared.go").Parse(`package cdk
+
+import (
+	"github.com/aws/aws-cdk-go/awscdk/v2"
+)
+
+type Shared struct {
+}
+
+func NewShared(stack awscdk.Stack) *Shared {
+	return &Shared{}
+}
+`))
+
+var cdkDeploymentTemplate = template.Must(template.New("deployment.go").Parse(`package cdk
+
+import (
+	"github.com/aws/aws-cdk-go/awscdk/v2"
+)
+
+type Deployment struct {
+}
+
+func NewDeployment(stack awscdk.Stack, shared *Shared, deploymentIdent string) *Deployment {
+	return &Deployment{}
+}
+`))
+
+type CDKConfig struct {
+	Prefix           string
+	Qualifier        string
+	PrimaryRegion    string
+	SecondaryRegions []string
+	BaseDomainName   string
+	Deployments      []string
+	ModuleName       string
+}
+
+func DefaultCDKConfigFromDir(dir string) CDKConfig {
+	name := filepath.Base(dir)
+	return CDKConfig{
+		Prefix:           name + "-",
+		Qualifier:        name,
+		PrimaryRegion:    "us-east-1",
+		SecondaryRegions: []string{},
+		BaseDomainName:   "example.com",
+		Deployments:      []string{"Prod", "Stag", "Dev1", "Dev2", "Dev3"},
+	}
+}
+
+func readModuleName(infraDir string) (string, error) {
+	goModPath := filepath.Join(infraDir, "go.mod")
+	data, err := os.ReadFile(goModPath)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to read go.mod")
+	}
+
+	for line := range strings.SplitSeq(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if moduleName, ok := strings.CutPrefix(line, "module "); ok {
+			return moduleName, nil
+		}
+	}
+
+	return "", errors.New("module name not found in go.mod")
+}
 
 type MiseConfig struct {
 	GoVersion     string
@@ -60,6 +158,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 	return doInit(ctx, InitOptions{
 		Dir:        dir,
 		MiseConfig: DefaultMiseConfig(),
+		CDKConfig:  DefaultCDKConfigFromDir(dir),
 		RunInstall: true,
 	})
 }
@@ -67,6 +166,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 type InitOptions struct {
 	Dir        string
 	MiseConfig MiseConfig
+	CDKConfig  CDKConfig
 	RunInstall bool
 }
 
@@ -76,6 +176,10 @@ func doInit(ctx context.Context, opts InitOptions) error {
 	}
 
 	if err := ensureEmptyDir(opts.Dir); err != nil {
+		return err
+	}
+
+	if err := initGitRepo(ctx, opts.Dir); err != nil {
 		return err
 	}
 
@@ -101,6 +205,14 @@ func doInit(ctx context.Context, opts InitOptions) error {
 		return err
 	}
 
+	if err := setupCDKProject(ctx, opts.Dir); err != nil {
+		return err
+	}
+
+	if err := configureCDKProject(ctx, opts.Dir, opts.CDKConfig); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -108,6 +220,15 @@ func checkMiseInstalled(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, "mise", "--version")
 	if err := cmd.Run(); err != nil {
 		return errors.New("mise is not installed or not in PATH")
+	}
+	return nil
+}
+
+func initGitRepo(ctx context.Context, dir string) error {
+	cmd := exec.CommandContext(ctx, "git", "init")
+	cmd.Dir = dir
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, "git init failed")
 	}
 	return nil
 }
@@ -146,7 +267,7 @@ func writeMiseToml(dir string, cfg MiseConfig) error {
 	}
 
 	path := filepath.Join(dir, "mise.toml")
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil { //nolint:gosec // config file needs to be readable
 		return errors.Wrap(err, "failed to write mise.toml")
 	}
 
@@ -170,6 +291,182 @@ func runMiseInstall(ctx context.Context, dir string) error {
 	if err := cmd.Run(); err != nil {
 		return errors.Wrap(err, "mise install failed")
 	}
+	return nil
+}
+
+func configureCDKProject(ctx context.Context, dir string, cfg CDKConfig) error {
+	infraDir := filepath.Join(dir, "infra")
+	cdkPkgDir := filepath.Join(infraDir, "cdk")
+	cdkDir := filepath.Join(cdkPkgDir, "cdk")
+
+	moduleName, err := readModuleName(infraDir)
+	if err != nil {
+		return err
+	}
+	cfg.ModuleName = moduleName
+
+	if err := writeCDKGoFiles(cdkPkgDir, cdkDir, cfg); err != nil {
+		return err
+	}
+
+	if err := writeCDKContextJSON(cdkDir, cfg); err != nil {
+		return err
+	}
+
+	if err := addAgcdkutilDependency(ctx, infraDir); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func writeCDKGoFiles(cdkPkgDir, cdkDir string, cfg CDKConfig) error {
+	templates := map[string]struct {
+		tmpl *template.Template
+		dir  string
+	}{
+		"cdk.go":        {cdkMainTemplate, cdkDir},
+		"shared.go":     {cdkSharedTemplate, cdkPkgDir},
+		"deployment.go": {cdkDeploymentTemplate, cdkPkgDir},
+	}
+
+	for filename, t := range templates {
+		var buf bytes.Buffer
+		if err := t.tmpl.Execute(&buf, cfg); err != nil {
+			return errors.Wrapf(err, "failed to execute %s template", filename)
+		}
+
+		path := filepath.Join(t.dir, filename)
+		if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil { //nolint:gosec // source file needs to be readable
+			return errors.Wrapf(err, "failed to write %s", filename)
+		}
+	}
+
+	return nil
+}
+
+var knownRegionIdents = map[string]string{
+	"us-east-1":      "use1",
+	"us-west-2":      "usw2",
+	"eu-west-1":      "euw1",
+	"eu-central-1":   "euc1",
+	"ap-northeast-1": "apne1",
+}
+
+func writeCDKContextJSON(cdkDir string, cfg CDKConfig) error {
+	context := map[string]any{
+		cfg.Prefix + "qualifier":        cfg.Qualifier,
+		cfg.Prefix + "primary-region":   cfg.PrimaryRegion,
+		cfg.Prefix + "secondary-regions": cfg.SecondaryRegions,
+		cfg.Prefix + "deployments":      cfg.Deployments,
+		cfg.Prefix + "base-domain-name": cfg.BaseDomainName,
+	}
+
+	allRegions := append([]string{cfg.PrimaryRegion}, cfg.SecondaryRegions...)
+	for _, region := range allRegions {
+		if ident, ok := knownRegionIdents[region]; ok {
+			context[cfg.Prefix+"region-ident-"+region] = ident
+		}
+	}
+
+	output, err := json.MarshalIndent(context, "", "  ")
+	if err != nil {
+		return errors.Wrap(err, "failed to marshal cdk.context.json")
+	}
+
+	contextPath := filepath.Join(cdkDir, "cdk.context.json")
+	if err := os.WriteFile(contextPath, output, 0o644); err != nil { //nolint:gosec // config file needs to be readable
+		return errors.Wrap(err, "failed to write cdk.context.json")
+	}
+
+	return nil
+}
+
+func addAgcdkutilDependency(ctx context.Context, infraDir string) error {
+	cmd := exec.CommandContext(ctx, "go", "get", "github.com/advdv/ago/agcdkutil")
+	cmd.Dir = infraDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, "failed to add agcdkutil dependency")
+	}
+
+	tidyCmd := exec.CommandContext(ctx, "go", "mod", "tidy")
+	tidyCmd.Dir = infraDir
+	tidyCmd.Stdout = os.Stdout
+	tidyCmd.Stderr = os.Stderr
+	if err := tidyCmd.Run(); err != nil {
+		return errors.Wrap(err, "go mod tidy failed")
+	}
+
+	return nil
+}
+
+func setupCDKProject(ctx context.Context, dir string) error {
+	infraDir := filepath.Join(dir, "infra")
+	cdkDir := filepath.Join(infraDir, "cdk", "cdk")
+
+	if err := os.MkdirAll(cdkDir, 0o755); err != nil {
+		return errors.Wrap(err, "failed to create CDK directory")
+	}
+
+	// Initialize CDK Go project
+	// We use "mise exec" to run cdk from the project root where mise.toml is located,
+	// so mise can provide the cdk binary from npm:aws-cdk.
+	initCmd := exec.CommandContext(ctx, "mise", "exec", "--", "cdk", "init", "app", "--language=go", "--generate-only")
+	// cdk init requires the target directory as current working directory
+	initCmd.Dir = cdkDir
+	// But we need mise from the parent, so we set MISE_PROJECT_DIR
+	initCmd.Env = append(os.Environ(), "MISE_PROJECT_DIR="+dir)
+	initCmd.Stdout = os.Stdout
+	initCmd.Stderr = os.Stderr
+	if err := initCmd.Run(); err != nil {
+		return errors.Wrap(err, "cdk init failed")
+	}
+
+	// Move go.mod and go.sum from cdkDir to infraDir so ./infra is the Go module root
+	for _, filename := range []string{"go.mod", "go.sum"} {
+		src := filepath.Join(cdkDir, filename)
+		dst := filepath.Join(infraDir, filename)
+		if _, err := os.Stat(src); err == nil {
+			if err := os.Rename(src, dst); err != nil {
+				return errors.Wrapf(err, "failed to move %s to infra directory", filename)
+			}
+		}
+	}
+
+	// Append "cdk" to .gitignore so compiled binary doesn't get committed
+	gitignorePath := filepath.Join(cdkDir, ".gitignore")
+	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return errors.Wrap(err, "failed to open .gitignore")
+	}
+	if _, err := f.WriteString("\ncdk\n"); err != nil {
+		f.Close()
+		return errors.Wrap(err, "failed to write to .gitignore")
+	}
+	f.Close()
+
+	// Remove the generated test file
+	entries, err := os.ReadDir(cdkDir)
+	if err != nil {
+		return errors.Wrap(err, "failed to read CDK directory")
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasSuffix(name, "_test.go") {
+			if err := os.Remove(filepath.Join(cdkDir, name)); err != nil {
+				return errors.Wrapf(err, "failed to remove %s", name)
+			}
+		}
+	}
+
+	// Remove the generated README.md
+	readmePath := filepath.Join(cdkDir, "README.md")
+	if err := os.Remove(readmePath); err != nil && !os.IsNotExist(err) {
+		return errors.Wrap(err, "failed to remove README.md")
+	}
+
 	return nil
 }
 

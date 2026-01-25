@@ -175,6 +175,29 @@ func TestCheckMiseInstalled(t *testing.T) {
 	})
 }
 
+func TestInitGitRepo(t *testing.T) {
+	t.Parallel()
+
+	t.Run("initializes git repo in directory", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+
+		err := initGitRepo(context.Background(), tmpDir)
+		if err != nil {
+			t.Fatalf("initGitRepo failed: %v", err)
+		}
+
+		gitDir := filepath.Join(tmpDir, ".git")
+		info, err := os.Stat(gitDir)
+		if err != nil {
+			t.Fatalf(".git directory was not created: %v", err)
+		}
+		if !info.IsDir() {
+			t.Fatal("expected .git to be a directory")
+		}
+	})
+}
+
 func TestDoInit(t *testing.T) {
 	t.Parallel()
 
@@ -191,6 +214,7 @@ func TestDoInit(t *testing.T) {
 		opts := InitOptions{
 			Dir:        targetDir,
 			MiseConfig: DefaultMiseConfig(),
+			CDKConfig:  DefaultCDKConfigFromDir(targetDir),
 			RunInstall: false,
 		}
 
@@ -230,6 +254,7 @@ func TestDoInit(t *testing.T) {
 		opts := InitOptions{
 			Dir:        targetDir,
 			MiseConfig: DefaultMiseConfig(),
+			CDKConfig:  DefaultCDKConfigFromDir(targetDir),
 			RunInstall: true,
 		}
 
