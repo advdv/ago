@@ -278,6 +278,22 @@ func doInit(ctx context.Context, opts InitOptions) error {
 		return err
 	}
 
+	if err := verifyCDKSetup(ctx, opts.Dir); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func verifyCDKSetup(ctx context.Context, dir string) error {
+	cdkDir := filepath.Join(dir, "infra", "cdk", "cdk")
+	cmd := exec.CommandContext(ctx, "mise", "exec", "--", "cdk", "ls")
+	cmd.Dir = cdkDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, "cdk ls failed - CDK setup may be incomplete")
+	}
 	return nil
 }
 
