@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/cockroachdb/errors"
 	"github.com/urfave/cli/v3"
@@ -32,6 +34,7 @@ func cdkCmd() *cli.Command {
 		Usage: "CDK account and infrastructure management",
 		Commands: []*cli.Command{
 			createProjectAccountCmd(),
+			bootstrapCmd(),
 		},
 	}
 }
@@ -246,6 +249,7 @@ func updateCDKJSONProfile(opts createAccountOptions, profileName string) error {
 	}
 
 	cdkJSON["profile"] = profileName
+	cdkJSON["bootstrap-profile"] = profileName
 
 	output, err := json.MarshalIndent(cdkJSON, "", "  ")
 	if err != nil {
@@ -283,5 +287,272 @@ func writeAWSProfile(
 		}
 	}
 
+	return nil
+}
+
+func bootstrapCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "bootstrap",
+		Usage:     "Bootstrap CDK in the AWS account",
+		ArgsUsage: "[project-directory]",
+		Action:    runBootstrap,
+	}
+}
+
+type bootstrapOptions struct {
+	ProjectDir string
+	Output     io.Writer
+}
+
+func runBootstrap(ctx context.Context, cmd *cli.Command) error {
+	projectDir := cmd.Args().First()
+	if projectDir == "" {
+		var err error
+		projectDir, err = os.Getwd()
+		if err != nil {
+			return errors.Wrap(err, "failed to get current working directory")
+		}
+	}
+
+	return doBootstrap(ctx, bootstrapOptions{
+		ProjectDir: projectDir,
+		Output:     os.Stdout,
+	})
+}
+
+func doBootstrap(ctx context.Context, opts bootstrapOptions) error {
+	cdkDir := filepath.Join(opts.ProjectDir, "infra", "cdk", "cdk")
+
+	writeOutputf(opts.Output, "Reading CDK context...\n")
+	cdkContext, err := getCDKContext(ctx, cdkDir)
+	if err != nil {
+		return err
+	}
+
+	profile, ok := cdkContext["bootstrap-profile"].(string)
+	if !ok || profile == "" {
+		return errors.New("bootstrap-profile not found in cdk.json - was 'ago cdk create-project-account' run?")
+	}
+
+	prefix, err := detectPrefix(cdkContext)
+	if err != nil {
+		return err
+	}
+
+	qualifier, ok := cdkContext[prefix+"qualifier"].(string)
+	if !ok || qualifier == "" {
+		return errors.Errorf("qualifier not found at context key %q", prefix+"qualifier")
+	}
+
+	secondaryRegions := extractStringSlice(cdkContext, prefix+"secondary-regions")
+
+	writeOutputf(opts.Output, "Verifying AWS access with profile %q...\n", profile)
+	if err := verifyAWSAccess(ctx, opts, profile); err != nil {
+		return err
+	}
+
+	writeOutputf(opts.Output, "Deploying pre-bootstrap stack...\n")
+	preBootstrapStackName := qualifier + "-pre-bootstrap"
+	templatePath := filepath.Join(opts.ProjectDir, "infra", "cfn", "pre-bootstrap.cfn.yaml")
+
+	err = deployPreBootstrapStack(
+		ctx, opts, profile, preBootstrapStackName, templatePath, qualifier, secondaryRegions)
+	if err != nil {
+		return err
+	}
+
+	executionPolicyArn, err := getStackOutputWithProfile(
+		ctx, opts, profile, preBootstrapStackName, "ExecutionPolicyArn")
+	if err != nil {
+		return err
+	}
+
+	permissionsBoundaryName, err := getStackOutputWithProfile(
+		ctx, opts, profile, preBootstrapStackName, "PermissionsBoundaryName")
+	if err != nil {
+		return err
+	}
+
+	boundaryConfig, ok := cdkContext["@aws-cdk/core:permissionsBoundary"].(map[string]any)
+	if !ok {
+		return errors.New("@aws-cdk/core:permissionsBoundary not found in cdk.context.json")
+	}
+	contextBoundaryName, ok := boundaryConfig["name"].(string)
+	if !ok || contextBoundaryName == "" {
+		return errors.New("@aws-cdk/core:permissionsBoundary.name not found in cdk.context.json")
+	}
+
+	if contextBoundaryName != permissionsBoundaryName {
+		return errors.Errorf(
+			"CDK context @aws-cdk/core:permissionsBoundary.name (%q) must match pre-bootstrap output (%q)",
+			contextBoundaryName, permissionsBoundaryName,
+		)
+	}
+
+	writeOutputf(opts.Output, "Running CDK bootstrap...\n")
+	err = runCDKBootstrap(
+		ctx, opts, cdkDir, profile, qualifier, executionPolicyArn, permissionsBoundaryName)
+	if err != nil {
+		return err
+	}
+
+	writeOutputf(opts.Output, "Bootstrap complete!\n")
+	return nil
+}
+
+func getCDKContext(ctx context.Context, cdkDir string) (map[string]any, error) {
+	cdkJSONPath := filepath.Join(cdkDir, "cdk.json")
+	cdkContextPath := filepath.Join(cdkDir, "cdk.context.json")
+
+	result := make(map[string]any)
+
+	cdkJSONData, err := os.ReadFile(cdkJSONPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to read cdk.json")
+	}
+	var cdkJSON map[string]any
+	if err := json.Unmarshal(cdkJSONData, &cdkJSON); err != nil {
+		return nil, errors.Wrap(err, "failed to parse cdk.json")
+	}
+	maps.Copy(result, cdkJSON)
+
+	cdkContextData, err := os.ReadFile(cdkContextPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to read cdk.context.json")
+	}
+	var cdkContextJSON map[string]any
+	if err := json.Unmarshal(cdkContextData, &cdkContextJSON); err != nil {
+		return nil, errors.Wrap(err, "failed to parse cdk.context.json")
+	}
+	maps.Copy(result, cdkContextJSON)
+
+	return result, nil
+}
+
+func detectPrefix(context map[string]any) (string, error) {
+	for key := range context {
+		if idx := len(key) - len("qualifier"); idx > 0 && key[idx:] == "qualifier" {
+			return key[:idx], nil
+		}
+	}
+	return "", errors.New("could not detect context prefix - no key ending with 'qualifier' found")
+}
+
+func extractStringSlice(context map[string]any, key string) []string {
+	val, ok := context[key]
+	if !ok {
+		return nil
+	}
+	slice, ok := val.([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(slice))
+	for _, v := range slice {
+		if s, ok := v.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+func verifyAWSAccess(ctx context.Context, opts bootstrapOptions, profile string) error {
+	cmd := exec.CommandContext(ctx, "mise", "exec", "--",
+		"aws", "sts", "get-caller-identity", "--profile", profile)
+	cmd.Dir = opts.ProjectDir
+	cmd.Stdout = opts.Output
+	cmd.Stderr = opts.Output
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, "failed to verify AWS access")
+	}
+	return nil
+}
+
+func deployPreBootstrapStack(
+	ctx context.Context, opts bootstrapOptions,
+	profile, stackName, templatePath, qualifier string, secondaryRegions []string,
+) error {
+	secondaryRegionsParam := ""
+	if len(secondaryRegions) > 0 {
+		secondaryRegionsParam = strings.Join(secondaryRegions, ",")
+	}
+
+	args := []string{
+		"exec", "--",
+		"aws", "cloudformation", "deploy",
+		"--stack-name", stackName,
+		"--template-file", templatePath,
+		"--parameter-overrides",
+		"Qualifier=" + qualifier,
+		"SecondaryRegions=" + secondaryRegionsParam,
+		"--capabilities", "CAPABILITY_NAMED_IAM",
+		"--no-fail-on-empty-changeset",
+		"--profile", profile,
+	}
+
+	cmd := exec.CommandContext(ctx, "mise", args...)
+	cmd.Dir = opts.ProjectDir
+	cmd.Stdout = opts.Output
+	cmd.Stderr = opts.Output
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, "failed to deploy pre-bootstrap stack")
+	}
+	return nil
+}
+
+func getStackOutputWithProfile(
+	ctx context.Context, opts bootstrapOptions, profile, stackName, outputKey string,
+) (string, error) {
+	cmd := exec.CommandContext(ctx, "mise", "exec", "--",
+		"aws", "cloudformation", "describe-stacks",
+		"--stack-name", stackName,
+		"--query", "Stacks[0].Outputs",
+		"--output", "json",
+		"--profile", profile,
+	)
+	cmd.Dir = opts.ProjectDir
+
+	output, err := cmd.Output()
+	if err != nil {
+		return "", errors.Wrap(err, "failed to describe stack")
+	}
+
+	var outputs []struct {
+		OutputKey   string `json:"OutputKey"`   //nolint:tagliatelle // AWS API uses PascalCase
+		OutputValue string `json:"OutputValue"` //nolint:tagliatelle // AWS API uses PascalCase
+	}
+	if err := json.Unmarshal(output, &outputs); err != nil {
+		return "", errors.Wrap(err, "failed to parse stack outputs")
+	}
+
+	for _, o := range outputs {
+		if o.OutputKey == outputKey {
+			return o.OutputValue, nil
+		}
+	}
+
+	return "", errors.Errorf("output %q not found in stack %q", outputKey, stackName)
+}
+
+func runCDKBootstrap(
+	ctx context.Context, opts bootstrapOptions, cdkDir string,
+	profile, qualifier, executionPolicyArn, permissionsBoundaryName string,
+) error {
+	toolkitStackName := qualifier + "Bootstrap"
+
+	cmd := exec.CommandContext(ctx, "mise", "exec", "--",
+		"cdk", "bootstrap",
+		"--profile", profile,
+		"--qualifier", qualifier,
+		"--toolkit-stack-name", toolkitStackName,
+		"--cloudformation-execution-policies", executionPolicyArn,
+		"--custom-permissions-boundary", permissionsBoundaryName,
+	)
+	cmd.Dir = cdkDir
+	cmd.Stdout = opts.Output
+	cmd.Stderr = opts.Output
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, "cdk bootstrap failed")
+	}
 	return nil
 }
