@@ -97,6 +97,12 @@ Resources:
               - ssm:GetParameter
               - ssm:GetParameters
             Resource: !Sub "arn:aws:ssm:*:${AWS::AccountId}:parameter/cdk-bootstrap/${Qualifier}/*"
+          - Sid: ConsoleFederation
+            Effect: Allow
+            Action:
+              - sts:GetFederationToken
+              - sts:TagSession
+            Resource: !Sub "arn:aws:sts::${AWS::AccountId}:federated-user/*"
 
   ExecutionPolicy:
     Type: AWS::IAM::ManagedPolicy
