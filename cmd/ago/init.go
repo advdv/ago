@@ -20,6 +20,7 @@ node = "{{.NodeVersion}}"
 "npm:aws-cdk" = "{{.AwsCdkVersion}}"
 aws-cli = "{{.AwsCliVersion}}"
 amp = "{{.AmpVersion}}"
+granted = "{{.GrantedVersion}}"
 `))
 
 var cdkMainTemplate = template.Must(template.New("cdk.go").Parse(`package main
@@ -386,20 +387,22 @@ func readModuleName(infraDir string) (string, error) {
 }
 
 type MiseConfig struct {
-	GoVersion     string
-	NodeVersion   string
-	AwsCdkVersion string
-	AwsCliVersion string
-	AmpVersion    string
+	GoVersion      string
+	NodeVersion    string
+	AwsCdkVersion  string
+	AwsCliVersion  string
+	AmpVersion     string
+	GrantedVersion string
 }
 
 func DefaultMiseConfig() MiseConfig {
 	return MiseConfig{
-		GoVersion:     "latest",
-		NodeVersion:   "22",
-		AwsCdkVersion: "latest",
-		AwsCliVersion: "latest",
-		AmpVersion:    "latest",
+		GoVersion:      "latest",
+		NodeVersion:    "22",
+		AwsCdkVersion:  "latest",
+		AwsCliVersion:  "latest",
+		AmpVersion:     "latest",
+		GrantedVersion: "latest",
 	}
 }
 

@@ -121,6 +121,9 @@ func TestWriteMiseToml(t *testing.T) {
 		if !strings.Contains(contentStr, `amp = "latest"`) {
 			t.Error("mise.toml should contain amp")
 		}
+		if !strings.Contains(contentStr, `granted = "latest"`) {
+			t.Error("mise.toml should contain granted")
+		}
 	})
 
 	t.Run("writes mise.toml with custom config", func(t *testing.T) {
@@ -128,11 +131,12 @@ func TestWriteMiseToml(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		cfg := MiseConfig{
-			GoVersion:     "1.22",
-			NodeVersion:   "20",
-			AwsCdkVersion: "2.0.0",
-			AwsCliVersion: "2.15.0",
-			AmpVersion:    "1.0.0",
+			GoVersion:      "1.22",
+			NodeVersion:    "20",
+			AwsCdkVersion:  "2.0.0",
+			AwsCliVersion:  "2.15.0",
+			AmpVersion:     "1.0.0",
+			GrantedVersion: "0.35.0",
 		}
 		err := writeMiseToml(tmpDir, cfg)
 		if err != nil {
@@ -159,6 +163,9 @@ func TestWriteMiseToml(t *testing.T) {
 		}
 		if !strings.Contains(contentStr, `amp = "1.0.0"`) {
 			t.Errorf("mise.toml should contain amp 1.0.0, got: %s", contentStr)
+		}
+		if !strings.Contains(contentStr, `granted = "0.35.0"`) {
+			t.Errorf("mise.toml should contain granted 0.35.0, got: %s", contentStr)
 		}
 	})
 }

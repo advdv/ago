@@ -249,7 +249,7 @@ func updateCDKJSONProfile(opts createAccountOptions, profileName string) error {
 	}
 
 	cdkJSON["profile"] = profileName
-	cdkJSON["bootstrap-profile"] = profileName
+	cdkJSON["admin-profile"] = profileName
 
 	output, err := json.MarshalIndent(cdkJSON, "", "  ")
 	if err != nil {
@@ -329,9 +329,9 @@ func doBootstrap(ctx context.Context, opts bootstrapOptions) error {
 		return err
 	}
 
-	profile, ok := cdkContext["bootstrap-profile"].(string)
+	profile, ok := cdkContext["admin-profile"].(string)
 	if !ok || profile == "" {
-		return errors.New("bootstrap-profile not found in cdk.json - was 'ago cdk create-project-account' run?")
+		return errors.New("admin-profile not found in cdk.json - was 'ago cdk create-project-account' run?")
 	}
 
 	prefix, err := detectPrefix(cdkContext)
