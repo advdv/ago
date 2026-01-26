@@ -56,6 +56,7 @@ func cdkCmd() *cli.Command {
 			removeDeployerCmd(),
 			deployCmd(),
 			diffCmd(),
+			destroyCmd(),
 		},
 	}
 }
