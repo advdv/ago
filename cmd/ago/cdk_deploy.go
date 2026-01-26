@@ -87,16 +87,16 @@ func doDeploy(ctx context.Context, opts cdkCommandOptions) error {
 
 	profile := resolveProfile(ctx, opts.ProjectDir, cdkContext, qualifier, username)
 
-	isFullDep, err := isFullDeployer(ctx, opts.ProjectDir, profile, qualifier, username)
+	userGroups, err := getUserGroups(ctx, opts.ProjectDir, profile, username)
 	if err != nil {
 		return err
 	}
 
-	if err := checkDeploymentPermission(deployment, isFullDep); err != nil {
+	if err := checkDeploymentPermission(deployment, isFullDeployer(userGroups, qualifier)); err != nil {
 		return err
 	}
 
-	args := buildCDKArgs(profile, qualifier, prefix, cdkContext)
+	args := buildCDKArgs(profile, qualifier, prefix, userGroups)
 
 	if opts.All {
 		args = append(args, "--all", "--require-approval", "never")

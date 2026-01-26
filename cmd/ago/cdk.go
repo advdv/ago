@@ -323,9 +323,9 @@ Available deployments: %s`, deployment, username, formatDeploymentsList(deployme
 	return deployment, nil
 }
 
-func isFullDeployer(
-	ctx context.Context, projectDir, profile, qualifier, username string,
-) (bool, error) {
+func getUserGroups(
+	ctx context.Context, projectDir, profile, username string,
+) ([]string, error) {
 	cmd := exec.CommandContext(ctx, "mise", "exec", "--",
 		"aws", "iam", "list-groups-for-user",
 		"--user-name", username,
@@ -337,16 +337,20 @@ func isFullDeployer(
 
 	output, err := cmd.Output()
 	if err != nil {
-		return false, errors.Wrap(err, "failed to list groups for user")
+		return nil, errors.Wrap(err, "failed to list groups for user")
 	}
 
 	var groups []string
 	if err := json.Unmarshal(output, &groups); err != nil {
-		return false, errors.Wrap(err, "failed to parse groups")
+		return nil, errors.Wrap(err, "failed to parse groups")
 	}
 
+	return groups, nil
+}
+
+func isFullDeployer(groups []string, qualifier string) bool {
 	deployersGroup := qualifier + "-deployers"
-	return slices.Contains(groups, deployersGroup), nil
+	return slices.Contains(groups, deployersGroup)
 }
 
 func checkDeploymentPermission(deployment string, isFullDep bool) error {
@@ -384,7 +388,7 @@ func resolveProfile(
 	return deployerProfile
 }
 
-func buildCDKArgs(profile, qualifier, prefix string, cdkContext map[string]any) []string {
+func buildCDKArgs(profile, qualifier, prefix string, userGroups []string) []string {
 	args := make([]string, 0, 10)
 	args = append(args,
 		"--profile", profile,
@@ -392,8 +396,9 @@ func buildCDKArgs(profile, qualifier, prefix string, cdkContext map[string]any) 
 		"--toolkit-stack-name", qualifier+"Bootstrap",
 	)
 
-	args = append(args, "-c", prefix+"deployers-group="+qualifier+"-deployers")
-	args = append(args, "-c", prefix+"dev-deployers-group="+qualifier+"-dev-deployers")
+	if len(userGroups) > 0 {
+		args = append(args, "-c", prefix+"deployer-groups="+strings.Join(userGroups, " "))
+	}
 
 	return args
 }

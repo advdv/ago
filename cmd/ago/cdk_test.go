@@ -89,30 +89,51 @@ func TestCheckDeploymentPermission(t *testing.T) {
 
 func TestBuildCDKArgs(t *testing.T) {
 	t.Parallel()
-	cdkContext := map[string]any{
-		"admin-profile":   "test-admin",
-		"myapp-qualifier": "myapp",
-	}
 
-	args := buildCDKArgs("test-adam", "myapp", "myapp-", cdkContext)
+	t.Run("with user groups", func(t *testing.T) {
+		t.Parallel()
+		userGroups := []string{"myapp-deployers", "other-group"}
 
-	expected := []string{
-		"--profile", "test-adam",
-		"--qualifier", "myapp",
-		"--toolkit-stack-name", "myappBootstrap",
-		"-c", "myapp-deployers-group=myapp-deployers",
-		"-c", "myapp-dev-deployers-group=myapp-dev-deployers",
-	}
+		args := buildCDKArgs("test-adam", "myapp", "myapp-", userGroups)
 
-	if len(args) != len(expected) {
-		t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
-	}
-
-	for i, arg := range args {
-		if arg != expected[i] {
-			t.Errorf("arg[%d]: expected %q, got %q", i, expected[i], arg)
+		expected := []string{
+			"--profile", "test-adam",
+			"--qualifier", "myapp",
+			"--toolkit-stack-name", "myappBootstrap",
+			"-c", "myapp-deployer-groups=myapp-deployers other-group",
 		}
-	}
+
+		if len(args) != len(expected) {
+			t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
+		}
+
+		for i, arg := range args {
+			if arg != expected[i] {
+				t.Errorf("arg[%d]: expected %q, got %q", i, expected[i], arg)
+			}
+		}
+	})
+
+	t.Run("without user groups", func(t *testing.T) {
+		t.Parallel()
+		args := buildCDKArgs("test-adam", "myapp", "myapp-", nil)
+
+		expected := []string{
+			"--profile", "test-adam",
+			"--qualifier", "myapp",
+			"--toolkit-stack-name", "myappBootstrap",
+		}
+
+		if len(args) != len(expected) {
+			t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
+		}
+
+		for i, arg := range args {
+			if arg != expected[i] {
+				t.Errorf("arg[%d]: expected %q, got %q", i, expected[i], arg)
+			}
+		}
+	})
 }
 
 func TestValidateDeployerUsername(t *testing.T) {

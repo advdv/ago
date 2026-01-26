@@ -73,7 +73,12 @@ func doDiff(ctx context.Context, opts cdkCommandOptions) error {
 
 	profile := resolveProfile(ctx, opts.ProjectDir, cdkContext, qualifier, username)
 
-	args := buildCDKArgs(profile, qualifier, prefix, cdkContext)
+	userGroups, err := getUserGroups(ctx, opts.ProjectDir, profile, username)
+	if err != nil {
+		return err
+	}
+
+	args := buildCDKArgs(profile, qualifier, prefix, userGroups)
 
 	if opts.All {
 		args = append(args, "--all")
