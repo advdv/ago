@@ -36,6 +36,38 @@ func TestValidateProjectName(t *testing.T) {
 	}
 }
 
+func TestValidateDeployerUsername(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"valid capital start", "Adam", false},
+		{"valid with numbers", "Adam123", false},
+		{"valid single capital", "A", false},
+		{"valid mixed case", "AdamSmith", false},
+		{"invalid lowercase start", "adam", true},
+		{"invalid all lowercase", "adamsmith", true},
+		{"invalid starts with number", "123Adam", true},
+		{"invalid empty", "", true},
+		{"invalid spaces", "Adam Smith", true},
+		{"invalid hyphen", "Adam-Smith", true},
+		{"invalid underscore", "Adam_Smith", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateDeployerUsername(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateDeployerUsername(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestParseCommaList(t *testing.T) {
 	t.Parallel()
 

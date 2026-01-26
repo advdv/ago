@@ -29,6 +29,22 @@ func validateProjectName(name string) error {
 	return nil
 }
 
+// validateDeployerUsername checks that the deployer username starts with a capital letter.
+// This is important for CDK resource naming schemes, where the username is used to construct
+// deployment identifiers like "DevAdam" or "DevBob". Starting with a capital ensures consistent
+// PascalCase naming in CloudFormation resource names and stack identifiers.
+var deployerUsernameRegex = regexp.MustCompile(`^[A-Z][a-zA-Z0-9]*$`)
+
+func validateDeployerUsername(username string) error {
+	if !deployerUsernameRegex.MatchString(username) {
+		return errors.Errorf(
+			"invalid deployer username %q: must start with a capital letter (e.g., 'Adam', not 'adam')",
+			username,
+		)
+	}
+	return nil
+}
+
 func cdkCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "cdk",
@@ -649,6 +665,10 @@ func runAddDeployer(ctx context.Context, cmd *cli.Command) error {
 }
 
 func doAddDeployer(ctx context.Context, opts deployerOptions) error {
+	if err := validateDeployerUsername(opts.Username); err != nil {
+		return err
+	}
+
 	cdkDir := filepath.Join(opts.ProjectDir, "infra", "cdk", "cdk")
 	contextPath := filepath.Join(cdkDir, "cdk.context.json")
 

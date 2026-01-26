@@ -266,7 +266,8 @@ Resources:
         Type: AWS::IAM::AccessKey
         Condition: HasDeployers
         Properties:
-          UserName: !Ref ${UserName}User
+          UserName:
+            Ref: ${UserName}User
       ${UserName}Credentials:
         Type: AWS::SecretsManager::Secret
         Condition: HasDeployers
@@ -274,8 +275,12 @@ Resources:
           Name: !Sub "${Qualifier}/deployers/${UserName}"
           SecretString:
             Fn::ToJsonString:
-              aws_access_key_id: !Ref ${UserName}AccessKey
-              aws_secret_access_key: !GetAtt ${UserName}AccessKey.SecretAccessKey
+              aws_access_key_id:
+                Ref: ${UserName}AccessKey
+              aws_secret_access_key:
+                Fn::GetAtt:
+                  - ${UserName}AccessKey
+                  - SecretAccessKey
 
   Fn::ForEach::DevDeployerUsers:
     - UserName
@@ -291,7 +296,8 @@ Resources:
         Type: AWS::IAM::AccessKey
         Condition: HasDevDeployers
         Properties:
-          UserName: !Ref ${UserName}User
+          UserName:
+            Ref: ${UserName}User
       ${UserName}Credentials:
         Type: AWS::SecretsManager::Secret
         Condition: HasDevDeployers
@@ -299,8 +305,12 @@ Resources:
           Name: !Sub "${Qualifier}/deployers/${UserName}"
           SecretString:
             Fn::ToJsonString:
-              aws_access_key_id: !Ref ${UserName}AccessKey
-              aws_secret_access_key: !GetAtt ${UserName}AccessKey.SecretAccessKey
+              aws_access_key_id:
+                Ref: ${UserName}AccessKey
+              aws_secret_access_key:
+                Fn::GetAtt:
+                  - ${UserName}AccessKey
+                  - SecretAccessKey
 
 Outputs:
   ExecutionPolicyArn:
