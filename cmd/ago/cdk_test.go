@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -502,6 +503,277 @@ aws_secret_access_key=ADAMSECRET
 
 		if len(strings.TrimSpace(string(result))) != 0 {
 			t.Errorf("expected empty file, got %q", string(result))
+		}
+	})
+}
+
+func setupTestCDKDir(t *testing.T, context map[string]any) (tmpDir, cdkDir string) {
+	t.Helper()
+	tmpDir = t.TempDir()
+	cdkDir = tmpDir + "/infra/cdk/cdk"
+	if err := os.MkdirAll(cdkDir, 0o755); err != nil {
+		t.Fatalf("failed to create cdk dir: %v", err)
+	}
+
+	cdkJSON := map[string]any{"app": "go mod download && go run ."}
+	if err := writeContextFile(cdkDir+"/cdk.json", cdkJSON); err != nil {
+		t.Fatalf("failed to write cdk.json: %v", err)
+	}
+
+	if err := writeContextFile(cdkDir+"/cdk.context.json", context); err != nil {
+		t.Fatalf("failed to write cdk.context.json: %v", err)
+	}
+
+	return tmpDir, cdkDir
+}
+
+func TestDoAddDeployer(t *testing.T) {
+	t.Parallel()
+
+	t.Run("adds deployer and deployment to context", func(t *testing.T) {
+		t.Parallel()
+		tmpDir, cdkDir := setupTestCDKDir(t, map[string]any{
+			"myproj-qualifier":     "myproj",
+			"myproj-deployers":     []any{},
+			"myproj-dev-deployers": []any{},
+			"myproj-deployments":   []any{"Prod", "Stag"},
+		})
+
+		var buf strings.Builder
+		opts := deployerOptions{
+			ProjectDir: tmpDir,
+			Username:   "Adam",
+			DevOnly:    false,
+			Output:     &buf,
+		}
+
+		err := doAddDeployer(t.Context(), opts)
+		if err != nil {
+			t.Fatalf("doAddDeployer() error = %v", err)
+		}
+
+		result, err := readContextFile(cdkDir + "/cdk.context.json")
+		if err != nil {
+			t.Fatalf("failed to read result: %v", err)
+		}
+
+		deployers := extractStringSlice(result, "myproj-deployers")
+		if len(deployers) != 1 || deployers[0] != "Adam" {
+			t.Errorf("deployers = %v, want [Adam]", deployers)
+		}
+
+		deployments := extractStringSlice(result, "myproj-deployments")
+		if len(deployments) != 3 {
+			t.Errorf("deployments = %v, want [Prod Stag DevAdam]", deployments)
+		}
+		if !slices.Contains(deployments, "DevAdam") {
+			t.Errorf("deployments should contain DevAdam, got %v", deployments)
+		}
+
+		output := buf.String()
+		if !strings.Contains(output, "Added \"Adam\" to deployers") {
+			t.Errorf("output should mention adding to deployers: %s", output)
+		}
+		if !strings.Contains(output, "Added \"DevAdam\" to deployments") {
+			t.Errorf("output should mention adding deployment: %s", output)
+		}
+	})
+
+	t.Run("adds dev deployer and deployment to context", func(t *testing.T) {
+		t.Parallel()
+		tmpDir, cdkDir := setupTestCDKDir(t, map[string]any{
+			"myproj-qualifier":     "myproj",
+			"myproj-deployers":     []any{},
+			"myproj-dev-deployers": []any{},
+			"myproj-deployments":   []any{"Prod", "Stag"},
+		})
+
+		var buf strings.Builder
+		opts := deployerOptions{
+			ProjectDir: tmpDir,
+			Username:   "Bob",
+			DevOnly:    true,
+			Output:     &buf,
+		}
+
+		err := doAddDeployer(t.Context(), opts)
+		if err != nil {
+			t.Fatalf("doAddDeployer() error = %v", err)
+		}
+
+		result, err := readContextFile(cdkDir + "/cdk.context.json")
+		if err != nil {
+			t.Fatalf("failed to read result: %v", err)
+		}
+
+		devDeployers := extractStringSlice(result, "myproj-dev-deployers")
+		if len(devDeployers) != 1 || devDeployers[0] != "Bob" {
+			t.Errorf("dev-deployers = %v, want [Bob]", devDeployers)
+		}
+
+		deployments := extractStringSlice(result, "myproj-deployments")
+		if !slices.Contains(deployments, "DevBob") {
+			t.Errorf("deployments should contain DevBob, got %v", deployments)
+		}
+	})
+
+	t.Run("does not duplicate existing deployment", func(t *testing.T) {
+		t.Parallel()
+		tmpDir, cdkDir := setupTestCDKDir(t, map[string]any{
+			"myproj-qualifier":     "myproj",
+			"myproj-deployers":     []any{},
+			"myproj-dev-deployers": []any{},
+			"myproj-deployments":   []any{"Prod", "Stag", "DevAdam"},
+		})
+
+		var buf strings.Builder
+		opts := deployerOptions{
+			ProjectDir: tmpDir,
+			Username:   "Adam",
+			DevOnly:    false,
+			Output:     &buf,
+		}
+
+		err := doAddDeployer(t.Context(), opts)
+		if err != nil {
+			t.Fatalf("doAddDeployer() error = %v", err)
+		}
+
+		result, err := readContextFile(cdkDir + "/cdk.context.json")
+		if err != nil {
+			t.Fatalf("failed to read result: %v", err)
+		}
+
+		deployments := extractStringSlice(result, "myproj-deployments")
+		count := 0
+		for _, d := range deployments {
+			if d == "DevAdam" {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("DevAdam should appear exactly once, got %d times in %v", count, deployments)
+		}
+
+		output := buf.String()
+		if strings.Contains(output, "Added \"DevAdam\" to deployments") {
+			t.Errorf("should not report adding existing deployment: %s", output)
+		}
+	})
+}
+
+func TestDoRemoveDeployer(t *testing.T) {
+	t.Parallel()
+
+	t.Run("removes deployer and deployment from context", func(t *testing.T) {
+		t.Parallel()
+		tmpDir, cdkDir := setupTestCDKDir(t, map[string]any{
+			"myproj-qualifier":     "myproj",
+			"myproj-deployers":     []any{"Adam", "Bob"},
+			"myproj-dev-deployers": []any{},
+			"myproj-deployments":   []any{"Prod", "Stag", "DevAdam", "DevBob"},
+		})
+
+		var buf strings.Builder
+		opts := deployerOptions{
+			ProjectDir: tmpDir,
+			Username:   "Adam",
+			Output:     &buf,
+		}
+
+		err := doRemoveDeployer(t.Context(), opts)
+		if err != nil {
+			t.Fatalf("doRemoveDeployer() error = %v", err)
+		}
+
+		result, err := readContextFile(cdkDir + "/cdk.context.json")
+		if err != nil {
+			t.Fatalf("failed to read result: %v", err)
+		}
+
+		deployers := extractStringSlice(result, "myproj-deployers")
+		if len(deployers) != 1 || deployers[0] != "Bob" {
+			t.Errorf("deployers = %v, want [Bob]", deployers)
+		}
+
+		deployments := extractStringSlice(result, "myproj-deployments")
+		if slices.Contains(deployments, "DevAdam") {
+			t.Errorf("deployments should not contain DevAdam, got %v", deployments)
+		}
+		if !slices.Contains(deployments, "DevBob") {
+			t.Errorf("deployments should still contain DevBob, got %v", deployments)
+		}
+
+		output := buf.String()
+		if !strings.Contains(output, "Removed \"Adam\" from deployers") {
+			t.Errorf("output should mention removing from deployers: %s", output)
+		}
+		if !strings.Contains(output, "Removed \"DevAdam\" from deployments") {
+			t.Errorf("output should mention removing deployment: %s", output)
+		}
+	})
+
+	t.Run("removes dev deployer and deployment from context", func(t *testing.T) {
+		t.Parallel()
+		tmpDir, cdkDir := setupTestCDKDir(t, map[string]any{
+			"myproj-qualifier":     "myproj",
+			"myproj-deployers":     []any{},
+			"myproj-dev-deployers": []any{"Charlie"},
+			"myproj-deployments":   []any{"Prod", "Stag", "DevCharlie"},
+		})
+
+		var buf strings.Builder
+		opts := deployerOptions{
+			ProjectDir: tmpDir,
+			Username:   "Charlie",
+			Output:     &buf,
+		}
+
+		err := doRemoveDeployer(t.Context(), opts)
+		if err != nil {
+			t.Fatalf("doRemoveDeployer() error = %v", err)
+		}
+
+		result, err := readContextFile(cdkDir + "/cdk.context.json")
+		if err != nil {
+			t.Fatalf("failed to read result: %v", err)
+		}
+
+		devDeployers := extractStringSlice(result, "myproj-dev-deployers")
+		if len(devDeployers) != 0 {
+			t.Errorf("dev-deployers = %v, want []", devDeployers)
+		}
+
+		deployments := extractStringSlice(result, "myproj-deployments")
+		if slices.Contains(deployments, "DevCharlie") {
+			t.Errorf("deployments should not contain DevCharlie, got %v", deployments)
+		}
+	})
+
+	t.Run("does not fail if deployment does not exist", func(t *testing.T) {
+		t.Parallel()
+		tmpDir, _ := setupTestCDKDir(t, map[string]any{
+			"myproj-qualifier":     "myproj",
+			"myproj-deployers":     []any{"Adam"},
+			"myproj-dev-deployers": []any{},
+			"myproj-deployments":   []any{"Prod", "Stag"},
+		})
+
+		var buf strings.Builder
+		opts := deployerOptions{
+			ProjectDir: tmpDir,
+			Username:   "Adam",
+			Output:     &buf,
+		}
+
+		err := doRemoveDeployer(t.Context(), opts)
+		if err != nil {
+			t.Fatalf("doRemoveDeployer() error = %v", err)
+		}
+
+		output := buf.String()
+		if strings.Contains(output, "Removed \"DevAdam\" from deployments") {
+			t.Errorf("should not report removing non-existent deployment: %s", output)
 		}
 	})
 }

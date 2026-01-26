@@ -710,6 +710,14 @@ func doAddDeployer(ctx context.Context, opts deployerOptions) error {
 		writeOutputf(opts.Output, "Added %q to deployers in cdk.context.json\n", opts.Username)
 	}
 
+	deploymentIdent := "Dev" + opts.Username
+	deployments := extractStringSlice(cdkContext, prefix+"deployments")
+	if !slices.Contains(deployments, deploymentIdent) {
+		deployments = append(deployments, deploymentIdent)
+		contextJSON[prefix+"deployments"] = deployments
+		writeOutputf(opts.Output, "Added %q to deployments in cdk.context.json\n", deploymentIdent)
+	}
+
 	if err := writeContextFile(contextPath, contextJSON); err != nil {
 		return err
 	}
@@ -795,6 +803,14 @@ func doRemoveDeployer(ctx context.Context, opts deployerOptions) error {
 		devDeployers = slices.DeleteFunc(devDeployers, func(s string) bool { return s == opts.Username })
 		contextJSON[prefix+"dev-deployers"] = devDeployers
 		writeOutputf(opts.Output, "Removed %q from dev-deployers in cdk.context.json\n", opts.Username)
+	}
+
+	deploymentIdent := "Dev" + opts.Username
+	deployments := extractStringSlice(cdkContext, prefix+"deployments")
+	if slices.Contains(deployments, deploymentIdent) {
+		deployments = slices.DeleteFunc(deployments, func(s string) bool { return s == deploymentIdent })
+		contextJSON[prefix+"deployments"] = deployments
+		writeOutputf(opts.Output, "Removed %q from deployments in cdk.context.json\n", deploymentIdent)
 	}
 
 	if err := writeContextFile(contextPath, contextJSON); err != nil {
