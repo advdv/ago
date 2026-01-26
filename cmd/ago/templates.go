@@ -36,6 +36,7 @@ Outputs:
 
 var preBootstrapTemplate = template.Must(template.New("pre-bootstrap.cfn.yaml").Parse(
 	`AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::LanguageExtensions
 Description: Pre-bootstrap resources for CDK project {{.Qualifier}}
 
 Parameters:
@@ -46,9 +47,19 @@ Parameters:
     Type: CommaDelimitedList
     Description: Secondary regions for secret replication
     Default: ""
+  Deployers:
+    Type: CommaDelimitedList
+    Description: List of deployer usernames
+    Default: ""
+  DevDeployers:
+    Type: CommaDelimitedList
+    Description: List of dev deployer usernames
+    Default: ""
 
 Conditions:
   HasSecondaryRegions: !Not [!Equals [!Join ["", !Ref SecondaryRegions], ""]]
+  HasDeployers: !Not [!Equals [!Join ["", !Ref Deployers], ""]]
+  HasDevDeployers: !Not [!Equals [!Join ["", !Ref DevDeployers], ""]]
 
 Resources:
   DeployerPolicy:
@@ -241,6 +252,56 @@ Resources:
       ManagedPolicyArns:
         - !Ref DeployerPolicy
 
+  Fn::ForEach::DeployerUsers:
+    - UserName
+    - !Ref Deployers
+    - ${UserName}User:
+        Type: AWS::IAM::User
+        Condition: HasDeployers
+        Properties:
+          UserName: ${UserName}
+          Groups:
+            - !Ref DeployersGroup
+      ${UserName}AccessKey:
+        Type: AWS::IAM::AccessKey
+        Condition: HasDeployers
+        Properties:
+          UserName: !Ref ${UserName}User
+      ${UserName}Credentials:
+        Type: AWS::SecretsManager::Secret
+        Condition: HasDeployers
+        Properties:
+          Name: !Sub "${Qualifier}/deployers/${UserName}"
+          SecretString:
+            Fn::ToJsonString:
+              aws_access_key_id: !Ref ${UserName}AccessKey
+              aws_secret_access_key: !GetAtt ${UserName}AccessKey.SecretAccessKey
+
+  Fn::ForEach::DevDeployerUsers:
+    - UserName
+    - !Ref DevDeployers
+    - ${UserName}User:
+        Type: AWS::IAM::User
+        Condition: HasDevDeployers
+        Properties:
+          UserName: ${UserName}
+          Groups:
+            - !Ref DevDeployersGroup
+      ${UserName}AccessKey:
+        Type: AWS::IAM::AccessKey
+        Condition: HasDevDeployers
+        Properties:
+          UserName: !Ref ${UserName}User
+      ${UserName}Credentials:
+        Type: AWS::SecretsManager::Secret
+        Condition: HasDevDeployers
+        Properties:
+          Name: !Sub "${Qualifier}/deployers/${UserName}"
+          SecretString:
+            Fn::ToJsonString:
+              aws_access_key_id: !Ref ${UserName}AccessKey
+              aws_secret_access_key: !GetAtt ${UserName}AccessKey.SecretAccessKey
+
 Outputs:
   ExecutionPolicyArn:
     Description: ARN of the CDK execution policy
@@ -280,7 +341,9 @@ type accountStackData struct {
 }
 
 type preBootstrapData struct {
-	Qualifier string
+	Qualifier    string
+	Deployers    []string
+	DevDeployers []string
 }
 
 func renderAccountStackTemplate(qualifier, emailPattern string) (path string, cleanup func(), err error) {
