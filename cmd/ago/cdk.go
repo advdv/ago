@@ -171,12 +171,73 @@ func isAssumedRoleARN(arn string) bool {
 	return strings.Contains(arn, ":assumed-role/")
 }
 
-func getCallerUsername(ctx context.Context, projectDir string, cdkContext map[string]any) (string, error) {
+func getCallerUsername(ctx context.Context, projectDir, qualifier string, cdkContext map[string]any) (string, error) {
+	deployerProfile := findLocalDeployerProfile(ctx, projectDir, qualifier)
+	if deployerProfile != "" {
+		username, err := getUsernameFromProfile(ctx, projectDir, deployerProfile)
+		if err == nil {
+			return username, nil
+		}
+	}
+
 	profile, ok := cdkContext["admin-profile"].(string)
 	if !ok || profile == "" {
 		return "", errors.New("admin-profile not found in cdk.json")
 	}
 
+	cmd := exec.CommandContext(ctx, "mise", "exec", "--",
+		"aws", "sts", "get-caller-identity",
+		"--profile", profile,
+		"--query", "Arn",
+		"--output", "text",
+	)
+	cmd.Dir = projectDir
+
+	output, err := cmd.Output()
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get caller identity")
+	}
+
+	arn := strings.TrimSpace(string(output))
+
+	if isAssumedRoleARN(arn) {
+		return "", errAssumedRole
+	}
+
+	parts := strings.Split(arn, "/")
+	if len(parts) < 2 {
+		return "", errors.Errorf("unexpected ARN format: %s", arn)
+	}
+
+	return parts[len(parts)-1], nil
+}
+
+func findLocalDeployerProfile(ctx context.Context, projectDir, qualifier string) string {
+	if qualifier == "" {
+		return ""
+	}
+
+	cmd := exec.CommandContext(ctx, "mise", "exec", "--",
+		"aws", "configure", "list-profiles",
+	)
+	cmd.Dir = projectDir
+
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	prefix := qualifier + "-"
+	for profile := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
+		if strings.HasPrefix(profile, prefix) && profile != qualifier+"-admin" {
+			return profile
+		}
+	}
+
+	return ""
+}
+
+func getUsernameFromProfile(ctx context.Context, projectDir, profile string) (string, error) {
 	cmd := exec.CommandContext(ctx, "mise", "exec", "--",
 		"aws", "sts", "get-caller-identity",
 		"--profile", profile,
