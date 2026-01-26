@@ -84,6 +84,7 @@ func doAddDeployer(ctx context.Context, opts deployerOptions) error {
 
 	deployers := extractStringSlice(cdkContext, prefix+"deployers")
 	devDeployers := extractStringSlice(cdkContext, prefix+"dev-deployers")
+	isFirstDeployer := len(deployers) == 0 && len(devDeployers) == 0
 
 	if slices.Contains(deployers, opts.Username) {
 		return errors.Errorf("user %q already exists in deployers list", opts.Username)
@@ -120,7 +121,6 @@ func doAddDeployer(ctx context.Context, opts deployerOptions) error {
 	}
 
 	qualifier, _ := cdkContext[prefix+"qualifier"].(string)
-	isFirstDeployer := len(deployers) == 0 && len(devDeployers) == 0
 	if isFirstDeployer && qualifier != "" {
 		if err := setCDKJSONProfile(cdkDir, qualifier, opts.Username); err != nil {
 			writeOutputf(opts.Output, "Warning: could not update cdk.json profile: %v\n", err)
