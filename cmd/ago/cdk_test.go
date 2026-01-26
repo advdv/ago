@@ -232,9 +232,11 @@ func TestWriteOutputf(t *testing.T) {
 func TestPreBootstrapTemplateRendering(t *testing.T) {
 	t.Parallel()
 
+	testServices := []string{"lambda", "dynamodb", "s3"}
+
 	t.Run("renders template with qualifier", func(t *testing.T) {
 		t.Parallel()
-		path, cleanup, err := renderPreBootstrapTemplate("testproj")
+		path, cleanup, err := renderPreBootstrapTemplate("testproj", testServices)
 		if err != nil {
 			t.Fatalf("renderPreBootstrapTemplate() error = %v", err)
 		}
@@ -247,7 +249,7 @@ func TestPreBootstrapTemplateRendering(t *testing.T) {
 
 	t.Run("template contains language extensions transform", func(t *testing.T) {
 		t.Parallel()
-		path, cleanup, err := renderPreBootstrapTemplate("testproj")
+		path, cleanup, err := renderPreBootstrapTemplate("testproj", testServices)
 		if err != nil {
 			t.Fatalf("renderPreBootstrapTemplate() error = %v", err)
 		}
@@ -265,7 +267,7 @@ func TestPreBootstrapTemplateRendering(t *testing.T) {
 
 	t.Run("template contains ForEach for deployers", func(t *testing.T) {
 		t.Parallel()
-		path, cleanup, err := renderPreBootstrapTemplate("testproj")
+		path, cleanup, err := renderPreBootstrapTemplate("testproj", testServices)
 		if err != nil {
 			t.Fatalf("renderPreBootstrapTemplate() error = %v", err)
 		}
@@ -286,7 +288,7 @@ func TestPreBootstrapTemplateRendering(t *testing.T) {
 
 	t.Run("template contains deployer parameters", func(t *testing.T) {
 		t.Parallel()
-		path, cleanup, err := renderPreBootstrapTemplate("testproj")
+		path, cleanup, err := renderPreBootstrapTemplate("testproj", testServices)
 		if err != nil {
 			t.Fatalf("renderPreBootstrapTemplate() error = %v", err)
 		}
@@ -307,7 +309,7 @@ func TestPreBootstrapTemplateRendering(t *testing.T) {
 
 	t.Run("template contains conditions for deployers", func(t *testing.T) {
 		t.Parallel()
-		path, cleanup, err := renderPreBootstrapTemplate("testproj")
+		path, cleanup, err := renderPreBootstrapTemplate("testproj", testServices)
 		if err != nil {
 			t.Fatalf("renderPreBootstrapTemplate() error = %v", err)
 		}
@@ -323,6 +325,51 @@ func TestPreBootstrapTemplateRendering(t *testing.T) {
 		}
 		if !strings.Contains(content, "HasDevDeployers:") {
 			t.Error("template should contain HasDevDeployers condition")
+		}
+	})
+
+	t.Run("template contains service-specific execution actions", func(t *testing.T) {
+		t.Parallel()
+		path, cleanup, err := renderPreBootstrapTemplate("testproj", testServices)
+		if err != nil {
+			t.Fatalf("renderPreBootstrapTemplate() error = %v", err)
+		}
+		defer cleanup()
+
+		content, err := readFileContent(path)
+		if err != nil {
+			t.Fatalf("failed to read rendered template: %v", err)
+		}
+
+		if !strings.Contains(content, "lambda:*") {
+			t.Error("template should contain lambda:* in execution actions")
+		}
+		if !strings.Contains(content, "dynamodb:*") {
+			t.Error("template should contain dynamodb:* in execution actions")
+		}
+		if !strings.Contains(content, "s3:*") {
+			t.Error("template should contain s3:* in execution actions")
+		}
+	})
+
+	t.Run("template contains console read actions", func(t *testing.T) {
+		t.Parallel()
+		path, cleanup, err := renderPreBootstrapTemplate("testproj", testServices)
+		if err != nil {
+			t.Fatalf("renderPreBootstrapTemplate() error = %v", err)
+		}
+		defer cleanup()
+
+		content, err := readFileContent(path)
+		if err != nil {
+			t.Fatalf("failed to read rendered template: %v", err)
+		}
+
+		if !strings.Contains(content, "lambda:Get*") {
+			t.Error("template should contain lambda:Get* in console actions")
+		}
+		if !strings.Contains(content, "dynamodb:Query") {
+			t.Error("template should contain dynamodb:Query in console actions")
 		}
 	})
 }

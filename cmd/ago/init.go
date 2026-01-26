@@ -89,6 +89,7 @@ type CDKConfig struct {
 	Deployments      []string
 	ModuleName       string
 	EmailPattern     string
+	Services         []string
 }
 
 func DefaultCDKConfigFromDir(dir string) CDKConfig {
@@ -101,6 +102,7 @@ func DefaultCDKConfigFromDir(dir string) CDKConfig {
 		BaseDomainName:   "example.com",
 		Deployments:      []string{"Prod", "Stag", "Dev1", "Dev2", "Dev3"},
 		EmailPattern:     "admin+{project}@example.com",
+		Services:         DefaultServices(),
 	}
 }
 
@@ -443,6 +445,7 @@ func writeCDKContextJSON(cdkDir string, cfg CDKConfig) error {
 		cfg.Prefix + "secondary-regions": cfg.SecondaryRegions,
 		cfg.Prefix + "deployments":       cfg.Deployments,
 		cfg.Prefix + "base-domain-name":  cfg.BaseDomainName,
+		cfg.Prefix + "services":          cfg.Services,
 		"@aws-cdk/core:permissionsBoundary": map[string]string{
 			"name": cfg.Qualifier + "-permissions-boundary",
 		},

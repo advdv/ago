@@ -384,6 +384,11 @@ func doBootstrap(ctx context.Context, opts bootstrapOptions) error {
 		return err
 	}
 
+	services, err := ParseServicesFromContext(cdkContext, prefix)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse services from context")
+	}
+
 	writeOutputf(opts.Output, "Deploying pre-bootstrap stack...\n")
 	if len(deployers) > 0 {
 		writeOutputf(opts.Output, "  Deployers: %s\n", strings.Join(deployers, ", "))
@@ -391,10 +396,11 @@ func doBootstrap(ctx context.Context, opts bootstrapOptions) error {
 	if len(devDeployers) > 0 {
 		writeOutputf(opts.Output, "  Dev deployers: %s\n", strings.Join(devDeployers, ", "))
 	}
+	writeOutputf(opts.Output, "  Services: %s\n", strings.Join(services, ", "))
 
 	preBootstrapStackName := qualifier + "-pre-bootstrap"
 
-	templatePath, cleanup, err := renderPreBootstrapTemplate(qualifier)
+	templatePath, cleanup, err := renderPreBootstrapTemplate(qualifier, services)
 	if err != nil {
 		return errors.Wrap(err, "failed to render pre-bootstrap template")
 	}

@@ -103,6 +103,13 @@ Resources:
               - sts:GetFederationToken
               - sts:TagSession
             Resource: !Sub "arn:aws:sts::${AWS::AccountId}:federated-user/*"
+          - Sid: ConsoleReadAccess
+            Effect: Allow
+            Action:
+{{- range .ConsoleActions}}
+              - {{.}}
+{{- end}}
+            Resource: "*"
 
   ExecutionPolicy:
     Type: AWS::IAM::ManagedPolicy
@@ -112,28 +119,12 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: FullAccess
+          - Sid: ServiceAccess
             Effect: Allow
             Action:
-              - apigateway:*
-              - cloudfront:*
-              - cloudwatch:*
-              - cognito-idp:*
-              - dynamodb:*
-              - ecr:*
-              - events:*
-              - iam:*
-              - lambda:*
-              - logs:*
-              - route53:*
-              - s3:*
-              - secretsmanager:*
-              - sns:*
-              - sqs:*
-              - ssm:*
-              - states:*
-              - acm:*
-              - kms:*
+{{- range .ExecutionActions}}
+              - {{.}}
+{{- end}}
             Resource: "*"
           - Sid: CreateServiceLinkedRoles
             Effect: Allow
@@ -142,6 +133,7 @@ Resources:
               - !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/replication.ecr.amazonaws.com/*"
               - !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/replication.dynamodb.amazonaws.com/*"
               - !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ops.apigateway.amazonaws.com/*"
+              - !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/autoscaling.amazonaws.com/*"
           - Sid: EnforceBoundary
             Effect: Deny
             Action:
@@ -361,9 +353,11 @@ type accountStackData struct {
 }
 
 type preBootstrapData struct {
-	Qualifier    string
-	Deployers    []string
-	DevDeployers []string
+	Qualifier        string
+	Deployers        []string
+	DevDeployers     []string
+	ExecutionActions []string
+	ConsoleActions   []string
 }
 
 func renderAccountStackTemplate(qualifier, emailPattern string) (path string, cleanup func(), err error) {
@@ -375,9 +369,11 @@ func renderAccountStackTemplate(qualifier, emailPattern string) (path string, cl
 	return renderTemplateToTempFile(accountStackTemplate, data, "account-stack-*.yaml")
 }
 
-func renderPreBootstrapTemplate(qualifier string) (path string, cleanup func(), err error) {
+func renderPreBootstrapTemplate(qualifier string, services []string) (path string, cleanup func(), err error) {
 	data := preBootstrapData{
-		Qualifier: qualifier,
+		Qualifier:        qualifier,
+		ExecutionActions: GenerateExecutionActions(services),
+		ConsoleActions:   GenerateConsoleActions(services),
 	}
 	return renderTemplateToTempFile(preBootstrapTemplate, data, "pre-bootstrap-*.yaml")
 }
