@@ -21,6 +21,7 @@ node = "{{.NodeVersion}}"
 aws-cli = "{{.AwsCliVersion}}"
 amp = "{{.AmpVersion}}"
 granted = "{{.GrantedVersion}}"
+"go:github.com/advdv/ago/cmd/ago" = { version = "main", install_env = { GOPROXY = "direct" } }
 `))
 
 var cdkMainTemplate = template.Must(template.New("cdk.go").Parse(`package main
@@ -573,39 +574,20 @@ func installAmpSkills(ctx context.Context, dir string, skills []string) error {
 
 // installAgoCLI installs the ago CLI tool using mise.
 //
-// This process requires special handling for three reasons:
-//
-//  1. GOPROXY=direct is required to bypass the Go module proxy cache.
-//     The proxy can cache module versions for up to 24 hours, so without
-//     this flag, users might not get the absolute latest commit.
-//
-//  2. We must first uninstall any existing version before installing.
-//     Mise considers "@latest" as already installed if present, and won't
-//     reinstall even if a newer commit exists. Uninstalling first forces
-//     mise to fetch and install the current latest version.
-//
-//  3. GOFLAGS=-mod=mod prevents Go from using a parent go.mod file.
-//     If the new project is created inside an existing Go module (e.g., ago/t1),
-//     Go would otherwise try to resolve the package within that module context,
-//     causing "invalid import path" errors.
+// The ago entry is already in mise.toml with install_env = { GOPROXY = "direct" }
+// which ensures Go bypasses the module proxy cache. We uninstall first to force
+// mise to re-fetch the latest commit from main branch.
 func installAgoCLI(ctx context.Context, dir string) error {
 	const agoPackage = "go:github.com/advdv/ago/cmd/ago@main"
 
-	env := append(os.Environ(), "GOPROXY=direct", "GOFLAGS=-mod=mod")
-
-	// First uninstall any existing version. This is necessary because mise
-	// won't reinstall if @latest is already present, even if there's a newer commit.
-	// We ignore errors here since the package might not be installed yet.
+	// Uninstall existing version to force mise to re-fetch
 	uninstallCmd := exec.CommandContext(ctx, "mise", "uninstall", agoPackage)
 	uninstallCmd.Dir = dir
-	uninstallCmd.Env = env
 	_ = uninstallCmd.Run() // Ignore error - package might not exist
 
-	// Install the latest version, bypassing the Go module proxy cache
-	// to ensure we get the absolute latest commit.
-	installCmd := exec.CommandContext(ctx, "mise", "use", agoPackage)
+	// Install based on mise.toml entry (which has install_env with GOPROXY=direct)
+	installCmd := exec.CommandContext(ctx, "mise", "install", agoPackage)
 	installCmd.Dir = dir
-	installCmd.Env = env
 	installCmd.Stdout = os.Stdout
 	installCmd.Stderr = os.Stderr
 	if err := installCmd.Run(); err != nil {
