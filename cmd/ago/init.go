@@ -21,7 +21,6 @@ node = "{{.NodeVersion}}"
 aws-cli = "{{.AwsCliVersion}}"
 amp = "{{.AmpVersion}}"
 granted = "{{.GrantedVersion}}"
-"go:github.com/advdv/ago/cmd/ago" = { version = "main", install_env = { GOPROXY = "direct" } }
 `))
 
 var cdkMainTemplate = template.Must(template.New("cdk.go").Parse(`package main
@@ -572,22 +571,20 @@ func installAmpSkills(ctx context.Context, dir string, skills []string) error {
 	return nil
 }
 
-// installAgoCLI installs the ago CLI tool using mise.
+// installAgoCLI installs the ago CLI tool.
 //
-// The ago entry is already in mise.toml with install_env = { GOPROXY = "direct" }
-// which ensures Go bypasses the module proxy cache. We uninstall first to force
-// mise to re-fetch the latest commit from main branch.
+// We use "mise exec -- go install" with GOPROXY=direct because:
+// 1. mise's install_env option doesn't propagate env vars to the go backend
+// 2. GOPROXY=direct bypasses Go's module proxy cache (can be stale up to 24h)
+// 3. This ensures we always get the latest commit from main branch
 func installAgoCLI(ctx context.Context, dir string) error {
-	const agoPackage = "go:github.com/advdv/ago/cmd/ago@main"
+	const goPackage = "github.com/advdv/ago/cmd/ago@main"
 
-	// Uninstall existing version to force mise to re-fetch
-	uninstallCmd := exec.CommandContext(ctx, "mise", "uninstall", agoPackage)
-	uninstallCmd.Dir = dir
-	_ = uninstallCmd.Run() // Ignore error - package might not exist
+	env := append(os.Environ(), "GOPROXY=direct")
 
-	// Install based on mise.toml entry (which has install_env with GOPROXY=direct)
-	installCmd := exec.CommandContext(ctx, "mise", "install", agoPackage)
+	installCmd := exec.CommandContext(ctx, "mise", "exec", "--", "go", "install", goPackage)
 	installCmd.Dir = dir
+	installCmd.Env = env
 	installCmd.Stdout = os.Stdout
 	installCmd.Stderr = os.Stderr
 	if err := installCmd.Run(); err != nil {
