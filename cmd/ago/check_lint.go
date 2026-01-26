@@ -11,7 +11,7 @@ import (
 )
 
 func checkLint(ctx context.Context, cmd *cli.Command) error {
-	if _, err := script.Exec("golangci-lint run ./...").Stdout(); err != nil {
+	if _, err := script.Exec("golangci-lint run ./infra/...").Stdout(); err != nil {
 		return err
 	}
 

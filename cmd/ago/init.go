@@ -21,6 +21,7 @@ node = "{{.NodeVersion}}"
 aws-cli = "{{.AwsCliVersion}}"
 amp = "{{.AmpVersion}}"
 granted = "{{.GrantedVersion}}"
+golangci-lint = "{{.GolangciLintVersion}}"
 shellcheck = "{{.ShellcheckVersion}}"
 shfmt = "{{.ShfmtVersion}}"
 "github:advdv/ago" = "{{.AgoVersion}}"
@@ -83,6 +84,138 @@ func NewDeployment(stack awscdk.Stack, shared *Shared, deploymentIdent string) *
 }
 `))
 
+var golangciLintTemplate = template.Must(template.New(".golangci.yml").Parse(`version: "2"
+linters:
+  default: all
+  disable:
+    - canonicalheader
+    - containedctx
+    - dogsled
+    - dupl
+    - dupword
+    - err113
+    - exhaustruct
+    - funlen
+    - gochecknoglobals
+    - gochecknoinits
+    - goconst
+    - gomoddirectives
+    - ireturn
+    - maintidx
+    - mnd
+    - nlreturn
+    - nonamedreturns
+    - perfsprint
+    - thelper
+    - unparam
+    - wrapcheck
+    - wsl_v5
+    - wsl
+    - noinlineerr
+    - embeddedstructfieldcheck
+    - tagalign
+  settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^print(ln)?$
+        - pattern: ^fmt\.Print.*$
+          msg: Do not commit print statements.
+        - pattern: ^fmt\.Errorf.*$
+          msg: use 'github.com/cockroachdb/errors' for errors
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+    cyclop:
+      max-complexity: 30
+    depguard:
+      rules:
+        force_cockroachdb_errors:
+          list-mode: lax
+          files:
+            - $all
+          deny:
+            - pkg: errors
+              desc: use 'github.com/cockroachdb/errors' instead
+    revive:
+      rules:
+        - name: package-comments
+          disabled: true
+    funlen:
+      lines: 200
+    nlreturn:
+      block-size: 3
+    staticcheck:
+      checks:
+        - all
+        - "-ST1000"
+        - "-QF1008"
+    varnamelen:
+      max-distance: 15
+      ignore-names:
+        - id
+        - err
+        - db
+        - tx
+        - w
+        - r
+        - ok
+        - op # operation
+        - lc # lifecycle
+        - pk # partition key
+        - sk # sort key
+  exclusions:
+    generated: lax
+    presets:
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - interfacebloat
+        path: internal/rpc/rpc.go
+      - linters:
+          - paralleltest
+        path: testing/e2e/
+      - linters:
+          - dupl
+          - err113
+          - errcheck
+          - forcetypeassert
+          - gochecknoglobals
+          - gocyclo
+          - gosec
+          - lll
+          - nilnil
+          - nlreturn
+          - perfsprint
+          - revive
+          - varnamelen
+          - wrapcheck
+          - gocognit
+        path: _test\.go
+      - path: (.+)\.go$
+        text: ST1003
+    paths:
+      - node_modules
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - node_modules
+      - third_party$
+      - builtin$
+      - examples$
+`))
+
 type CDKConfig struct {
 	Prefix           string
 	Qualifier        string
@@ -127,28 +260,30 @@ func readModuleName(infraDir string) (string, error) {
 }
 
 type MiseConfig struct {
-	GoVersion         string
-	NodeVersion       string
-	AwsCdkVersion     string
-	AwsCliVersion     string
-	AmpVersion        string
-	GrantedVersion    string
-	ShellcheckVersion string
-	ShfmtVersion      string
-	AgoVersion        string
+	GoVersion           string
+	NodeVersion         string
+	AwsCdkVersion       string
+	AwsCliVersion       string
+	AmpVersion          string
+	GrantedVersion      string
+	GolangciLintVersion string
+	ShellcheckVersion   string
+	ShfmtVersion        string
+	AgoVersion          string
 }
 
 func DefaultMiseConfig() MiseConfig {
 	return MiseConfig{
-		GoVersion:         "latest",
-		NodeVersion:       "22",
-		AwsCdkVersion:     "latest",
-		AwsCliVersion:     "latest",
-		AmpVersion:        "latest",
-		GrantedVersion:    "latest",
-		ShellcheckVersion: "latest",
-		ShfmtVersion:      "latest",
-		AgoVersion:        "latest",
+		GoVersion:           "latest",
+		NodeVersion:         "22",
+		AwsCdkVersion:       "latest",
+		AwsCliVersion:       "latest",
+		AmpVersion:          "latest",
+		GrantedVersion:      "latest",
+		GolangciLintVersion: "latest",
+		ShellcheckVersion:   "latest",
+		ShfmtVersion:        "latest",
+		AgoVersion:          "latest",
 	}
 }
 
@@ -411,6 +546,10 @@ func configureCDKProject(ctx context.Context, dir string, cfg CDKConfig) error {
 		return err
 	}
 
+	if err := writeGolangciLintConfig(infraDir); err != nil {
+		return err
+	}
+
 	if err := addAgcdkutilDependency(ctx, infraDir); err != nil {
 		return err
 	}
@@ -464,6 +603,20 @@ func writeCDKContextJSON(cdkDir string, cfg CDKConfig) error {
 	contextPath := filepath.Join(cdkDir, "cdk.context.json")
 	if err := os.WriteFile(contextPath, output, 0o644); err != nil { //nolint:gosec // config file needs to be readable
 		return errors.Wrap(err, "failed to write cdk.context.json")
+	}
+
+	return nil
+}
+
+func writeGolangciLintConfig(infraDir string) error {
+	var buf bytes.Buffer
+	if err := golangciLintTemplate.Execute(&buf, nil); err != nil {
+		return errors.Wrap(err, "failed to execute .golangci.yml template")
+	}
+
+	path := filepath.Join(infraDir, ".golangci.yml")
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil { //nolint:gosec // config file needs to be readable
+		return errors.Wrap(err, "failed to write .golangci.yml")
 	}
 
 	return nil
