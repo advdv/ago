@@ -51,6 +51,11 @@ func createProjectAccountCmd() *cli.Command {
 				Required: true,
 			},
 			&cli.StringFlag{
+				Name:     "email-pattern",
+				Usage:    "Email pattern for the account (use {project} as placeholder)",
+				Required: true,
+			},
+			&cli.StringFlag{
 				Name:  "region",
 				Usage: "AWS region for the CloudFormation stack",
 				Value: "eu-central-1",
@@ -71,6 +76,7 @@ type createAccountOptions struct {
 	ManagementProfile string
 	Region            string
 	WriteProfile      bool
+	EmailPattern      string
 	Output            io.Writer
 }
 
@@ -95,6 +101,7 @@ func runCreateProjectAccount(ctx context.Context, cmd *cli.Command) error {
 		ManagementProfile: cmd.String("management-profile"),
 		Region:            cmd.String("region"),
 		WriteProfile:      cmd.Bool("write-profile"),
+		EmailPattern:      cmd.String("email-pattern"),
 		Output:            os.Stdout,
 	}
 
@@ -102,14 +109,19 @@ func runCreateProjectAccount(ctx context.Context, cmd *cli.Command) error {
 }
 
 func doCreateProjectAccount(ctx context.Context, opts createAccountOptions) error {
-	templatePath := filepath.Join(opts.ProjectDir, "infra", "cfn", "account-stack.yaml")
-	if _, err := os.Stat(templatePath); err != nil {
-		return errors.Errorf("account stack template not found at %s - was 'ago init' run?", templatePath)
+	if opts.EmailPattern == "" {
+		return errors.New("email pattern is required for account creation")
 	}
+
+	templatePath, cleanup, err := renderAccountStackTemplate(opts.ProjectName, opts.EmailPattern)
+	if err != nil {
+		return errors.Wrap(err, "failed to render account stack template")
+	}
+	defer cleanup()
 
 	stackName := "ago-account-" + opts.ProjectName
 
-	writeOutputf(opts.Output, "Deploying account stack %q using template %s...\n", stackName, templatePath)
+	writeOutputf(opts.Output, "Deploying account stack %q...\n", stackName)
 
 	if err := deployStackWithCLI(ctx, opts, stackName, templatePath); err != nil {
 		return err
@@ -353,7 +365,12 @@ func doBootstrap(ctx context.Context, opts bootstrapOptions) error {
 
 	writeOutputf(opts.Output, "Deploying pre-bootstrap stack...\n")
 	preBootstrapStackName := qualifier + "-pre-bootstrap"
-	templatePath := filepath.Join(opts.ProjectDir, "infra", "cfn", "pre-bootstrap.cfn.yaml")
+
+	templatePath, cleanup, err := renderPreBootstrapTemplate(qualifier)
+	if err != nil {
+		return errors.Wrap(err, "failed to render pre-bootstrap template")
+	}
+	defer cleanup()
 
 	err = deployPreBootstrapStack(
 		ctx, opts, profile, preBootstrapStackName, templatePath, qualifier, secondaryRegions)

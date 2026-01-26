@@ -219,10 +219,12 @@ func TestDoInit(t *testing.T) {
 		targetDir := filepath.Join(tmpDir, "newproject")
 
 		opts := InitOptions{
-			Dir:        targetDir,
-			MiseConfig: DefaultMiseConfig(),
-			CDKConfig:  DefaultCDKConfigFromDir(targetDir),
-			RunInstall: false,
+			Dir:                 targetDir,
+			MiseConfig:          DefaultMiseConfig(),
+			CDKConfig:           DefaultCDKConfigFromDir(targetDir),
+			RunInstall:          false,
+			SkipAccountCreation: true,
+			SkipCDKVerify:       true,
 		}
 
 		err := doInit(context.Background(), opts)
@@ -259,10 +261,12 @@ func TestDoInit(t *testing.T) {
 		targetDir := filepath.Join(tmpDir, "newproject")
 
 		opts := InitOptions{
-			Dir:        targetDir,
-			MiseConfig: DefaultMiseConfig(),
-			CDKConfig:  DefaultCDKConfigFromDir(targetDir),
-			RunInstall: true,
+			Dir:                 targetDir,
+			MiseConfig:          DefaultMiseConfig(),
+			CDKConfig:           DefaultCDKConfigFromDir(targetDir),
+			RunInstall:          true,
+			SkipAccountCreation: true,
+			SkipCDKVerify:       true,
 		}
 
 		err := doInit(context.Background(), opts)
