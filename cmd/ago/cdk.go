@@ -442,11 +442,9 @@ func doBootstrap(ctx context.Context, opts bootstrapOptions) error {
 		return err
 	}
 
-	if len(deployers) > 0 || len(devDeployers) > 0 {
-		writeOutputf(opts.Output, "Syncing deployer credentials...\n")
-		if err := syncDeployerCredentials(ctx, opts, profile, qualifier, deployers, devDeployers); err != nil {
-			return err
-		}
+	writeOutputf(opts.Output, "Syncing deployer credentials...\n")
+	if err := syncDeployerCredentials(ctx, opts, profile, qualifier, deployers, devDeployers); err != nil {
+		return err
 	}
 
 	writeOutputf(opts.Output, "Bootstrap complete!\n")
