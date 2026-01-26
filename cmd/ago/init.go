@@ -589,7 +589,7 @@ func installAmpSkills(ctx context.Context, dir string, skills []string) error {
 //     Go would otherwise try to resolve the package within that module context,
 //     causing "invalid import path" errors.
 func installAgoCLI(ctx context.Context, dir string) error {
-	const agoPackage = "go:github.com/advdv/ago/cmd/ago@latest"
+	const agoPackage = "go:github.com/advdv/ago/cmd/ago@main"
 
 	env := append(os.Environ(), "GOPROXY=direct", "GOFLAGS=-mod=mod")
 

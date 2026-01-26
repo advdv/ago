@@ -29,18 +29,15 @@ func selfUpgradeCmd() *cli.Command {
 // this function uses "mise install" to reinstall the package that's already
 // defined in mise.toml. This ensures we operate on the same package identifier.
 func upgradeAgoCLI(ctx context.Context, dir string) error {
-	const agoPackage = "go:github.com/advdv/ago/cmd/ago"
+	const agoPackage = "go:github.com/advdv/ago/cmd/ago@main"
 
 	env := append(os.Environ(), "GOPROXY=direct", "GOFLAGS=-mod=mod")
 
-	// Uninstall both package identifier variants (with and without @latest)
-	// since installAgoCLI may have installed the @latest variant
-	for _, pkg := range []string{agoPackage, agoPackage + "@latest"} {
-		uninstallCmd := exec.CommandContext(ctx, "mise", "uninstall", pkg)
-		uninstallCmd.Dir = dir
-		uninstallCmd.Env = env
-		_ = uninstallCmd.Run() // Ignore error - package might not exist
-	}
+	// Uninstall existing version so mise will fetch fresh from main branch
+	uninstallCmd := exec.CommandContext(ctx, "mise", "uninstall", agoPackage)
+	uninstallCmd.Dir = dir
+	uninstallCmd.Env = env
+	_ = uninstallCmd.Run() // Ignore error - package might not exist
 
 	// Reinstall based on mise.toml entry
 	installCmd := exec.CommandContext(ctx, "mise", "install", agoPackage)
