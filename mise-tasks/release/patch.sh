@@ -7,7 +7,7 @@ latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
 
 # Parse version components
 version="${latest_tag#v}"
-IFS='.' read -r major minor patch <<< "$version"
+IFS='.' read -r major minor patch <<<"$version"
 
 # Bump patch
 new_version="v${major}.${minor}.$((patch + 1))"

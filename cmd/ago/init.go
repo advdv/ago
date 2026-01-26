@@ -22,6 +22,7 @@ aws-cli = "{{.AwsCliVersion}}"
 amp = "{{.AmpVersion}}"
 granted = "{{.GrantedVersion}}"
 shellcheck = "{{.ShellcheckVersion}}"
+shfmt = "{{.ShfmtVersion}}"
 `))
 
 var cdkMainTemplate = template.Must(template.New("cdk.go").Parse(`package main
@@ -132,6 +133,7 @@ type MiseConfig struct {
 	AmpVersion        string
 	GrantedVersion    string
 	ShellcheckVersion string
+	ShfmtVersion      string
 }
 
 func DefaultMiseConfig() MiseConfig {
@@ -143,6 +145,7 @@ func DefaultMiseConfig() MiseConfig {
 		AmpVersion:        "latest",
 		GrantedVersion:    "latest",
 		ShellcheckVersion: "latest",
+		ShfmtVersion:      "latest",
 	}
 }
 
