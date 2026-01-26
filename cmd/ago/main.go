@@ -8,10 +8,14 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+// Version is set via ldflags at build time.
+var Version = "dev"
+
 func main() {
 	cmd := &cli.Command{
-		Name:  "ago",
-		Usage: "Development task runner for the ago project",
+		Name:    "ago",
+		Usage:   "Development task runner for the ago project",
+		Version: Version,
 		Commands: []*cli.Command{
 			cdkCmd(),
 			checkCmd(),

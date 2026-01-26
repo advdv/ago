@@ -21,6 +21,7 @@ node = "{{.NodeVersion}}"
 aws-cli = "{{.AwsCliVersion}}"
 amp = "{{.AmpVersion}}"
 granted = "{{.GrantedVersion}}"
+shellcheck = "{{.ShellcheckVersion}}"
 `))
 
 var cdkMainTemplate = template.Must(template.New("cdk.go").Parse(`package main
@@ -124,22 +125,24 @@ func readModuleName(infraDir string) (string, error) {
 }
 
 type MiseConfig struct {
-	GoVersion      string
-	NodeVersion    string
-	AwsCdkVersion  string
-	AwsCliVersion  string
-	AmpVersion     string
-	GrantedVersion string
+	GoVersion         string
+	NodeVersion       string
+	AwsCdkVersion     string
+	AwsCliVersion     string
+	AmpVersion        string
+	GrantedVersion    string
+	ShellcheckVersion string
 }
 
 func DefaultMiseConfig() MiseConfig {
 	return MiseConfig{
-		GoVersion:      "latest",
-		NodeVersion:    "22",
-		AwsCdkVersion:  "latest",
-		AwsCliVersion:  "latest",
-		AmpVersion:     "latest",
-		GrantedVersion: "latest",
+		GoVersion:         "latest",
+		NodeVersion:       "22",
+		AwsCdkVersion:     "latest",
+		AwsCliVersion:     "latest",
+		AmpVersion:        "latest",
+		GrantedVersion:    "latest",
+		ShellcheckVersion: "latest",
 	}
 }
 
@@ -576,7 +579,7 @@ func installAmpSkills(ctx context.Context, dir string, skills []string) error {
 // We use "mise exec -- go install" with GOPROXY=direct because:
 // 1. mise's install_env option doesn't propagate env vars to the go backend
 // 2. GOPROXY=direct bypasses Go's module proxy cache (can be stale up to 24h)
-// 3. This ensures we always get the latest commit from main branch
+// 3. This ensures we always get the latest commit from main branch.
 func installAgoCLI(ctx context.Context, dir string) error {
 	const goPackage = "github.com/advdv/ago/cmd/ago@main"
 

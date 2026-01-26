@@ -2,3 +2,5 @@
 amp = "latest"
 go = "latest"
 golangci-lint = "latest"
+goreleaser = "latest"
+shellcheck = "latest"
