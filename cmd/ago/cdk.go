@@ -442,10 +442,9 @@ func doBootstrap(ctx context.Context, opts bootstrapOptions) error {
 		return err
 	}
 
-	allDeployers := slices.Concat(deployers, devDeployers)
-	if len(allDeployers) > 0 {
+	if len(deployers) > 0 || len(devDeployers) > 0 {
 		writeOutputf(opts.Output, "Syncing deployer credentials...\n")
-		if err := syncDeployerCredentials(ctx, opts, profile, qualifier, allDeployers); err != nil {
+		if err := syncDeployerCredentials(ctx, opts, profile, qualifier, deployers, devDeployers); err != nil {
 			return err
 		}
 	}
@@ -865,7 +864,8 @@ func parseCommaList(s string) []string {
 }
 
 func syncDeployerCredentials(
-	ctx context.Context, opts bootstrapOptions, profile, qualifier string, deployers []string,
+	ctx context.Context, opts bootstrapOptions, profile, qualifier string,
+	deployers, devDeployers []string,
 ) error {
 	existingProfiles, err := listDeployerProfiles(ctx, opts.ProjectDir, qualifier)
 	if err != nil {
@@ -873,10 +873,24 @@ func syncDeployerCredentials(
 		existingProfiles = nil
 	}
 
-	expectedProfiles := make(map[string]string)
+	type deployerInfo struct {
+		username   string
+		secretPath string
+	}
+	expectedProfiles := make(map[string]deployerInfo)
 	for _, username := range deployers {
 		profileName := qualifier + "-" + strings.ToLower(username)
-		expectedProfiles[profileName] = username
+		expectedProfiles[profileName] = deployerInfo{
+			username:   username,
+			secretPath: qualifier + "/deployers/" + username,
+		}
+	}
+	for _, username := range devDeployers {
+		profileName := qualifier + "-" + strings.ToLower(username)
+		expectedProfiles[profileName] = deployerInfo{
+			username:   username,
+			secretPath: qualifier + "/dev-deployers/" + username,
+		}
 	}
 
 	for _, existingProfile := range existingProfiles {
@@ -888,12 +902,10 @@ func syncDeployerCredentials(
 		}
 	}
 
-	for profileName, username := range expectedProfiles {
-		secretName := qualifier + "/deployers/" + username
-
-		credentialsJSON, err := getSecretValue(ctx, profile, opts.ProjectDir, secretName)
+	for profileName, info := range expectedProfiles {
+		credentialsJSON, err := getSecretValue(ctx, profile, opts.ProjectDir, info.secretPath)
 		if err != nil {
-			writeOutputf(opts.Output, "  Warning: could not fetch credentials for %s: %v\n", username, err)
+			writeOutputf(opts.Output, "  Warning: could not fetch credentials for %s: %v\n", info.username, err)
 			continue
 		}
 
@@ -902,11 +914,11 @@ func syncDeployerCredentials(
 			SecretAccessKey string `json:"aws_secret_access_key"`
 		}
 		if err := json.Unmarshal([]byte(credentialsJSON), &credentials); err != nil {
-			writeOutputf(opts.Output, "  Warning: could not parse credentials for %s: %v\n", username, err)
+			writeOutputf(opts.Output, "  Warning: could not parse credentials for %s: %v\n", info.username, err)
 			continue
 		}
 
-		writeOutputf(opts.Output, "  Configuring profile %q for user %s...\n", profileName, username)
+		writeOutputf(opts.Output, "  Configuring profile %q for user %s...\n", profileName, info.username)
 		err = writeDeployerProfile(ctx, opts.ProjectDir, profileName,
 			credentials.AccessKeyID, credentials.SecretAccessKey)
 		if err != nil {
