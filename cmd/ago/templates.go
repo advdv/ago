@@ -255,20 +255,20 @@ Resources:
   Fn::ForEach::DeployerUsers:
     - UserName
     - !Ref Deployers
-    - ${UserName}User:
+    - Deployer${UserName}User:
         Type: AWS::IAM::User
         Condition: HasDeployers
         Properties:
           UserName: ${UserName}
           Groups:
             - !Ref DeployersGroup
-      ${UserName}AccessKey:
+      Deployer${UserName}AccessKey:
         Type: AWS::IAM::AccessKey
         Condition: HasDeployers
         Properties:
           UserName:
-            Ref: ${UserName}User
-      ${UserName}Credentials:
+            Ref: Deployer${UserName}User
+      Deployer${UserName}Credentials:
         Type: AWS::SecretsManager::Secret
         Condition: HasDeployers
         Properties:
@@ -276,29 +276,29 @@ Resources:
           SecretString:
             Fn::ToJsonString:
               aws_access_key_id:
-                Ref: ${UserName}AccessKey
+                Ref: Deployer${UserName}AccessKey
               aws_secret_access_key:
                 Fn::GetAtt:
-                  - ${UserName}AccessKey
+                  - Deployer${UserName}AccessKey
                   - SecretAccessKey
 
   Fn::ForEach::DevDeployerUsers:
     - UserName
     - !Ref DevDeployers
-    - ${UserName}User:
+    - DevDeployer${UserName}User:
         Type: AWS::IAM::User
         Condition: HasDevDeployers
         Properties:
           UserName: ${UserName}
           Groups:
             - !Ref DevDeployersGroup
-      ${UserName}AccessKey:
+      DevDeployer${UserName}AccessKey:
         Type: AWS::IAM::AccessKey
         Condition: HasDevDeployers
         Properties:
           UserName:
-            Ref: ${UserName}User
-      ${UserName}Credentials:
+            Ref: DevDeployer${UserName}User
+      DevDeployer${UserName}Credentials:
         Type: AWS::SecretsManager::Secret
         Condition: HasDevDeployers
         Properties:
@@ -306,10 +306,10 @@ Resources:
           SecretString:
             Fn::ToJsonString:
               aws_access_key_id:
-                Ref: ${UserName}AccessKey
+                Ref: DevDeployer${UserName}AccessKey
               aws_secret_access_key:
                 Fn::GetAtt:
-                  - ${UserName}AccessKey
+                  - DevDeployer${UserName}AccessKey
                   - SecretAccessKey
 
 Outputs:
