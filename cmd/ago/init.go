@@ -23,6 +23,7 @@ amp = "{{.AmpVersion}}"
 granted = "{{.GrantedVersion}}"
 shellcheck = "{{.ShellcheckVersion}}"
 shfmt = "{{.ShfmtVersion}}"
+"github:advdv/ago" = "{{.AgoVersion}}"
 `))
 
 var cdkMainTemplate = template.Must(template.New("cdk.go").Parse(`package main
@@ -134,6 +135,7 @@ type MiseConfig struct {
 	GrantedVersion    string
 	ShellcheckVersion string
 	ShfmtVersion      string
+	AgoVersion        string
 }
 
 func DefaultMiseConfig() MiseConfig {
@@ -146,6 +148,7 @@ func DefaultMiseConfig() MiseConfig {
 		GrantedVersion:    "latest",
 		ShellcheckVersion: "latest",
 		ShfmtVersion:      "latest",
+		AgoVersion:        "latest",
 	}
 }
 
@@ -255,10 +258,6 @@ func doInit(ctx context.Context, opts InitOptions) error {
 		if err := runMiseInstall(ctx, opts.Dir); err != nil {
 			return err
 		}
-	}
-
-	if err := installAgoCLI(ctx, opts.Dir); err != nil {
-		return err
 	}
 
 	if err := installAmpSkills(ctx, opts.Dir, defaultSkills); err != nil {
@@ -574,28 +573,5 @@ func installAmpSkills(ctx context.Context, dir string, skills []string) error {
 			return errors.Wrapf(err, "failed to install amp skill %q", skill)
 		}
 	}
-	return nil
-}
-
-// installAgoCLI installs the ago CLI tool.
-//
-// We use "mise exec -- go install" with GOPROXY=direct because:
-// 1. mise's install_env option doesn't propagate env vars to the go backend
-// 2. GOPROXY=direct bypasses Go's module proxy cache (can be stale up to 24h)
-// 3. This ensures we always get the latest commit from main branch.
-func installAgoCLI(ctx context.Context, dir string) error {
-	const goPackage = "github.com/advdv/ago/cmd/ago@main"
-
-	env := append(os.Environ(), "GOPROXY=direct")
-
-	installCmd := exec.CommandContext(ctx, "mise", "exec", "--", "go", "install", goPackage)
-	installCmd.Dir = dir
-	installCmd.Env = env
-	installCmd.Stdout = os.Stdout
-	installCmd.Stderr = os.Stderr
-	if err := installCmd.Run(); err != nil {
-		return errors.Wrap(err, "failed to install ago CLI")
-	}
-
 	return nil
 }
