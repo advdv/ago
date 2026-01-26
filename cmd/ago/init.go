@@ -362,7 +362,7 @@ func DefaultCDKConfigFromDir(dir string) CDKConfig {
 		Prefix:           name + "-",
 		Qualifier:        name,
 		PrimaryRegion:    "eu-central-1",
-		SecondaryRegions: []string{},
+		SecondaryRegions: []string{"eu-north-1"},
 		BaseDomainName:   "example.com",
 		Deployments:      []string{"Prod", "Stag", "Dev1", "Dev2", "Dev3"},
 		EmailPattern:     "admin+{project}@example.com",
@@ -406,6 +406,21 @@ func DefaultMiseConfig() MiseConfig {
 	}
 }
 
+func parseSecondaryRegions(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.EqualFold(value, "none") {
+		return []string{}
+	}
+	parts := strings.Split(value, ",")
+	regions := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if r := strings.TrimSpace(p); r != "" {
+			regions = append(regions, r)
+		}
+	}
+	return regions
+}
+
 func initCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "init",
@@ -421,6 +436,11 @@ func initCmd() *cli.Command {
 				Name:  "region",
 				Usage: "AWS region for the project account",
 				Value: "eu-central-1",
+			},
+			&cli.StringFlag{
+				Name:  "secondary-regions",
+				Usage: "Comma-separated list of secondary AWS regions (use 'none' to disable)",
+				Value: "eu-north-1",
 			},
 		},
 		Action: runInit,
@@ -443,10 +463,13 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 	}
 	dir = absDir
 
+	cdkConfig := DefaultCDKConfigFromDir(dir)
+	cdkConfig.SecondaryRegions = parseSecondaryRegions(cmd.String("secondary-regions"))
+
 	return doInit(ctx, InitOptions{
 		Dir:               dir,
 		MiseConfig:        DefaultMiseConfig(),
-		CDKConfig:         DefaultCDKConfigFromDir(dir),
+		CDKConfig:         cdkConfig,
 		RunInstall:        true,
 		ManagementProfile: cmd.String("management-profile"),
 		Region:            cmd.String("region"),
