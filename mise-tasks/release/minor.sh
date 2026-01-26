@@ -22,6 +22,6 @@ git push origin "$new_version"
 goreleaser release --clean
 
 # Clear mise cache so upgrade detects new version immediately
-mise cache clear github:advdv/ago
+mise cache clear github
 
 echo "Released ${new_version}"
