@@ -17,7 +17,6 @@ func main() {
 			checkCmd(),
 			devCmd(),
 			initCmd(),
-			selfUpgradeCmd(),
 		},
 	}
 
