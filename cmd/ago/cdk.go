@@ -165,6 +165,12 @@ func writeContextFile(path string, context map[string]any) error {
 	return nil
 }
 
+var errAssumedRole = errors.New("using assumed role")
+
+func isAssumedRoleARN(arn string) bool {
+	return strings.Contains(arn, ":assumed-role/")
+}
+
 func getCallerUsername(ctx context.Context, projectDir string, cdkContext map[string]any) (string, error) {
 	profile, ok := cdkContext["admin-profile"].(string)
 	if !ok || profile == "" {
@@ -185,6 +191,11 @@ func getCallerUsername(ctx context.Context, projectDir string, cdkContext map[st
 	}
 
 	arn := strings.TrimSpace(string(output))
+
+	if isAssumedRoleARN(arn) {
+		return "", errAssumedRole
+	}
+
 	parts := strings.Split(arn, "/")
 	if len(parts) < 2 {
 		return "", errors.Errorf("unexpected ARN format: %s", arn)
@@ -193,19 +204,27 @@ func getCallerUsername(ctx context.Context, projectDir string, cdkContext map[st
 	return parts[len(parts)-1], nil
 }
 
+func formatDeploymentsList(deployments []string) string {
+	if len(deployments) == 0 {
+		return "(none)"
+	}
+	return strings.Join(deployments, ", ")
+}
+
 func resolveDeploymentIdent(
 	ctx context.Context,
 	opts cdkCommandOptions,
 	profile, prefix string,
 	cdkContext map[string]any,
 	username string,
+	usernameErr error,
 ) (string, error) {
 	deployments := extractStringSlice(cdkContext, prefix+"deployments")
 
 	if opts.Deployment != "" {
 		if !slices.Contains(deployments, opts.Deployment) {
-			return "", errors.Errorf("deployment %q not found in %sdeployments: %v",
-				opts.Deployment, prefix, deployments)
+			return "", errors.Errorf("deployment %q not found\n\nAvailable deployments: %s",
+				opts.Deployment, formatDeploymentsList(deployments))
 		}
 		return opts.Deployment, nil
 	}
@@ -214,11 +233,30 @@ func resolveDeploymentIdent(
 		return "", errors.New("deployment identifier required in CI mode")
 	}
 
+	if errors.Is(usernameErr, errAssumedRole) {
+		return "", errors.Errorf(`cannot auto-detect deployment: you're using an assumed role, not an IAM user
+
+To deploy, either:
+  - Specify a deployment explicitly: ago cdk deploy <deployment>
+  - Add yourself as a deployer: ago cdk add-deployer <YourName>
+    Then run: ago cdk bootstrap
+    Then retry without arguments
+
+Available deployments: %s`, formatDeploymentsList(deployments))
+	}
+
+	if usernameErr != nil {
+		return "", errors.Wrap(usernameErr, "failed to detect username")
+	}
+
 	deployment := "Dev" + username
 
 	if !slices.Contains(deployments, deployment) {
-		return "", errors.Errorf("deployment %q not found in %sdeployments: %v",
-			deployment, prefix, deployments)
+		return "", errors.Errorf(`deployment %q not found
+
+Run 'ago cdk add-deployer %s' to add yourself, then 'ago cdk bootstrap'.
+
+Available deployments: %s`, deployment, username, formatDeploymentsList(deployments))
 	}
 
 	return deployment, nil

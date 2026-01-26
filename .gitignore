@@ -33,6 +33,7 @@ go.work.sum
 
 # compiled ago
 /ago
+/cmd/ago/ago
 
 # test dir
 /t1

@@ -64,17 +64,14 @@ func doDiff(ctx context.Context, opts cdkCommandOptions) error {
 		return errors.Errorf("qualifier not found at context key %q", prefix+"qualifier")
 	}
 
-	username, err := getCallerUsername(ctx, opts.ProjectDir, cdkContext)
+	username, usernameErr := getCallerUsername(ctx, opts.ProjectDir, cdkContext)
+
+	deployment, err := resolveDeploymentIdent(ctx, opts, "", prefix, cdkContext, username, usernameErr)
 	if err != nil {
 		return err
 	}
 
 	profile := resolveProfile(ctx, opts.ProjectDir, cdkContext, qualifier, username)
-
-	deployment, err := resolveDeploymentIdent(ctx, opts, profile, prefix, cdkContext, username)
-	if err != nil {
-		return err
-	}
 
 	args := buildCDKArgs(profile, qualifier, prefix, cdkContext)
 

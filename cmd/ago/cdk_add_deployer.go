@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/cockroachdb/errors"
 	"github.com/urfave/cli/v3"
@@ -117,6 +119,45 @@ func doAddDeployer(ctx context.Context, opts deployerOptions) error {
 		return err
 	}
 
+	qualifier, _ := cdkContext[prefix+"qualifier"].(string)
+	isFirstDeployer := len(deployers) == 0 && len(devDeployers) == 0
+	if isFirstDeployer && qualifier != "" {
+		if err := setCDKJSONProfile(cdkDir, qualifier, opts.Username); err != nil {
+			writeOutputf(opts.Output, "Warning: could not update cdk.json profile: %v\n", err)
+		} else {
+			writeOutputf(opts.Output, "Updated cdk.json profile to %q\n", qualifier+"-"+strings.ToLower(opts.Username))
+		}
+	}
+
 	writeOutputf(opts.Output, "Run 'ago cdk bootstrap' to create the user and configure credentials.\n")
+	return nil
+}
+
+func setCDKJSONProfile(cdkDir, qualifier, username string) error {
+	cdkJSONPath := filepath.Join(cdkDir, "cdk.json")
+
+	data, err := os.ReadFile(cdkJSONPath)
+	if err != nil {
+		return errors.Wrap(err, "failed to read cdk.json")
+	}
+
+	var cdkJSON map[string]any
+	if err := json.Unmarshal(data, &cdkJSON); err != nil {
+		return errors.Wrap(err, "failed to parse cdk.json")
+	}
+
+	profileName := qualifier + "-" + strings.ToLower(username)
+	cdkJSON["profile"] = profileName
+
+	output, err := json.MarshalIndent(cdkJSON, "", "  ")
+	if err != nil {
+		return errors.Wrap(err, "failed to marshal cdk.json")
+	}
+
+	//nolint:gosec // config file needs to be readable
+	if err := os.WriteFile(cdkJSONPath, output, 0o644); err != nil {
+		return errors.Wrap(err, "failed to write cdk.json")
+	}
+
 	return nil
 }

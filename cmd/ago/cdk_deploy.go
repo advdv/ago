@@ -78,7 +78,9 @@ func doDeploy(ctx context.Context, opts cdkCommandOptions) error {
 		return errors.Errorf("qualifier not found at context key %q", prefix+"qualifier")
 	}
 
-	username, err := getCallerUsername(ctx, opts.ProjectDir, cdkContext)
+	username, usernameErr := getCallerUsername(ctx, opts.ProjectDir, cdkContext)
+
+	deployment, err := resolveDeploymentIdent(ctx, opts, "", prefix, cdkContext, username, usernameErr)
 	if err != nil {
 		return err
 	}
@@ -86,11 +88,6 @@ func doDeploy(ctx context.Context, opts cdkCommandOptions) error {
 	profile := resolveProfile(ctx, opts.ProjectDir, cdkContext, qualifier, username)
 
 	isFullDep, err := isFullDeployer(ctx, opts.ProjectDir, profile, qualifier, username)
-	if err != nil {
-		return err
-	}
-
-	deployment, err := resolveDeploymentIdent(ctx, opts, profile, prefix, cdkContext, username)
 	if err != nil {
 		return err
 	}
