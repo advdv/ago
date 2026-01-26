@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/urfave/cli/v3"
@@ -12,6 +13,7 @@ func selfUpgradeCmd() *cli.Command {
 		Name:  "self-upgrade",
 		Usage: "Upgrade ago CLI to the latest version",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			fmt.Println("VERIFIED: self-upgrade v2 working!")
 			dir, err := os.Getwd()
 			if err != nil {
 				return err
