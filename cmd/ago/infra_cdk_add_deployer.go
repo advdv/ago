@@ -113,7 +113,7 @@ func doAddDeployer(_ context.Context, cfg config.Config, opts deployerOptions) e
 		}
 	}
 
-	writeOutputf(opts.Output, "Run 'ago cdk bootstrap' to create the user and configure credentials.\n")
+	writeOutputf(opts.Output, "Run 'ago infra cdk bootstrap' to create the user and configure credentials.\n")
 	return nil
 }
 

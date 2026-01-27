@@ -91,6 +91,6 @@ func doRemoveDeployer(_ context.Context, cfg config.Config, opts removeDeployerO
 	}
 
 	writeOutputf(opts.Output,
-		"Run 'ago cdk bootstrap' to delete the user and remove credentials from ~/.aws.\n")
+		"Run 'ago infra cdk bootstrap' to delete the user and remove credentials from ~/.aws.\n")
 	return nil
 }

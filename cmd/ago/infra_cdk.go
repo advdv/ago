@@ -290,9 +290,9 @@ func resolveDeploymentIdent(
 		return "", errors.Errorf(`cannot auto-detect deployment: you're using an assumed role, not an IAM user
 
 To deploy, either:
-  - Specify a deployment explicitly: ago cdk deploy <deployment>
-  - Add yourself as a deployer: ago cdk add-deployer <YourName>
-    Then run: ago cdk bootstrap
+  - Specify a deployment explicitly: ago infra cdk deploy <deployment>
+  - Add yourself as a deployer: ago infra cdk add-deployer <YourName>
+    Then run: ago infra cdk bootstrap
     Then retry without arguments
 
 Available deployments: %s`, formatDeploymentsList(deployments))
@@ -307,7 +307,7 @@ Available deployments: %s`, formatDeploymentsList(deployments))
 	if !slices.Contains(deployments, deployment) {
 		return "", errors.Errorf(`deployment %q not found
 
-Run 'ago cdk add-deployer %s' to add yourself, then 'ago cdk bootstrap'.
+Run 'ago infra cdk add-deployer %s' to add yourself, then 'ago infra cdk bootstrap'.
 
 Available deployments: %s`, deployment, username, formatDeploymentsList(deployments))
 	}
