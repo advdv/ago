@@ -12,7 +12,7 @@ import (
 func checkLint(ctx context.Context, _ *cli.Command, cfg config.Config) error {
 	exec := cmdexec.New(cfg).WithOutput(os.Stdout, os.Stderr)
 
-	if err := exec.Run(ctx, "golangci-lint", "run", "./infra/..."); err != nil {
+	if err := exec.InSubdir("infra").Run(ctx, "golangci-lint", "run", "./..."); err != nil {
 		return err
 	}
 
