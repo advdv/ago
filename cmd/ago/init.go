@@ -367,6 +367,10 @@ func doInit(ctx context.Context, opts InitOptions) error {
 		return err
 	}
 
+	if err := exec.Run(ctx, "mise", "upgrade"); err != nil {
+		return errors.Wrap(err, "mise upgrade failed")
+	}
+
 	if err := exec.Run(ctx, "mise", "trust"); err != nil {
 		return errors.Wrap(err, "mise trust failed")
 	}
