@@ -10,6 +10,7 @@ require (
 	github.com/bitfield/script v0.24.1
 	github.com/cockroachdb/errors v1.12.0
 	github.com/go-playground/validator/v10 v10.30.1
+	github.com/goccy/go-yaml v1.19.2
 	github.com/iancoleman/strcase v0.3.0
 	github.com/urfave/cli/v3 v3.6.2
 )
