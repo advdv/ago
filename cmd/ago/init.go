@@ -47,10 +47,8 @@ func main() {
 		DeployersGroup:        "{{.Qualifier}}-deployers",
 		RestrictedDeployments: []string{"Stag", "Prod"},
 	},
-		func(stack awscdk.Stack) *cdk.Shared { return cdk.NewShared(stack) },
-		func(stack awscdk.Stack, shared *cdk.Shared, deploymentIdent string) {
-			cdk.NewDeployment(stack, shared, deploymentIdent)
-		},
+		cdk.NewShared,
+		cdk.NewDeployment,
 	)
 
 	app.Synth(nil)
@@ -77,11 +75,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 )
 
-type Deployment struct {
-}
-
-func NewDeployment(stack awscdk.Stack, shared *Shared, deploymentIdent string) *Deployment {
-	return &Deployment{}
+func NewDeployment(stack awscdk.Stack, shared *Shared, deploymentIdent string) {
 }
 `))
 
@@ -433,6 +427,10 @@ func doInit(ctx context.Context, opts InitOptions) error {
 		if err := verifyCDKSetup(ctx, exec, opts.CDKConfig); err != nil {
 			return err
 		}
+	}
+
+	if err := exec.Mise(ctx, "ago", "dev", "fmt"); err != nil {
+		return errors.Wrap(err, "failed to run ago dev fmt")
 	}
 
 	return nil
