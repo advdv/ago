@@ -35,7 +35,9 @@ go.work.sum
 /ago
 /cmd/ago/ago
 
-# test dir
+# test dirs
 /t1
+/t2
+/agotest2
 # Added by goreleaser init:
 dist/
