@@ -11,7 +11,7 @@ func checkCmd() *cli.Command {
 		Usage: "Run various checks",
 		Commands: []*cli.Command{
 			{
-				Name:   "tests",
+				Name:   "test",
 				Usage:  "Run Go tests",
 				Action: config.WithConfig(checkTests),
 			},

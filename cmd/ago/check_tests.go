@@ -10,5 +10,5 @@ import (
 )
 
 func checkTests(ctx context.Context, _ *cli.Command, cfg config.Config) error {
-	return cmdexec.New(cfg).WithOutput(os.Stdout, os.Stderr).Run(ctx, "go", "test", "./...")
+	return cmdexec.New(cfg).WithOutput(os.Stdout, os.Stderr).InSubdir("infra").Run(ctx, "go", "test", "./...")
 }
