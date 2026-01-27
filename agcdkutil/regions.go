@@ -1,6 +1,9 @@
 package agcdkutil
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // RegionIdents maps AWS region codes to 4-character identifiers for CDK construct IDs.
 // All identifiers are exactly 4 characters: 2-letter geo + 1-letter direction + 1-digit number.
@@ -70,4 +73,14 @@ func IsKnownRegion(region string) bool {
 // This is useful for resource naming where lowercase is preferred.
 func RegionIdentLower(region string) string {
 	return strings.ToLower(RegionIdentFor(region))
+}
+
+// AllKnownRegions returns a sorted slice of all known AWS region codes.
+func AllKnownRegions() []string {
+	regions := make([]string, 0, len(RegionIdents))
+	for region := range RegionIdents {
+		regions = append(regions, region)
+	}
+	slices.Sort(regions)
+	return regions
 }

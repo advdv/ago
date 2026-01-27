@@ -49,9 +49,8 @@ func validateDeployerUsername(username string) error {
 func cdkCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "cdk",
-		Usage: "CDK account and infrastructure management",
+		Usage: "CDK infrastructure management",
 		Commands: []*cli.Command{
-			createProjectAccountCmd(),
 			bootstrapCmd(),
 			addDeployerCmd(),
 			removeDeployerCmd(),

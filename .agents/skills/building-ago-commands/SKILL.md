@@ -7,11 +7,20 @@ description: Creates CLI commands for the ago tool following established pattern
 
 Creates CLI commands for the `ago` tool using consistent patterns for command execution, configuration access, and testing.
 
+## Config Loading Architecture
+
+Config is loaded **lazily** when an action runs, not in a global `Before` hook. This allows:
+- `ago` (no args) → shows help without requiring config
+- `ago dev` → shows subcommand help without requiring config
+- `ago dev fmt` → loads config when the action executes
+
+The `config.RunWithConfig()` wrapper handles lazy loading via `config.Ensure()`.
+
 ## Command Structure
 
 ### Standard Command (with config)
 
-Commands that require project config use `config.WithConfig`:
+Commands that require project config use `config.RunWithConfig`:
 
 ```go
 // cmd/ago/example.go
@@ -30,11 +39,11 @@ func exampleCmd() *cli.Command {
     return &cli.Command{
         Name:   "example",
         Usage:  "Example command description",
-        Action: config.WithConfig(runExample),
+        Action: config.RunWithConfig(runExample),
     }
 }
 
-func runExample(ctx context.Context, cmd *cli.Command, cfg config.Context) error {
+func runExample(ctx context.Context, cmd *cli.Command, cfg config.Config) error {
     return doExample(ctx, cfg, exampleOptions{
         SomeFlag: cmd.Bool("some-flag"),
         Output:   os.Stdout,
@@ -46,7 +55,7 @@ type exampleOptions struct {
     Output   io.Writer
 }
 
-func doExample(ctx context.Context, cfg config.Context, opts exampleOptions) error {
+func doExample(ctx context.Context, cfg config.Config, opts exampleOptions) error {
     exec := cmdexec.New(cfg).WithOutput(opts.Output, opts.Output)
     return exec.Run(ctx, "some-command", "arg1", "arg2")
 }
@@ -106,7 +115,7 @@ exec.Dir()  // Returns the working directory
 
 ```
 cmd/ago/
-├── main.go                 # CLI setup, Before hook loads config
+├── main.go                 # CLI setup (no Before hook, config loaded lazily)
 ├── example.go              # Parent command with subcommands
 ├── example_action.go       # Individual action implementation
 └── example_test.go         # Tests
@@ -124,12 +133,12 @@ func checkCmd() *cli.Command {
             {
                 Name:   "tests",
                 Usage:  "Run Go tests",
-                Action: config.WithConfig(checkTests),
+                Action: config.RunWithConfig(checkTests),
             },
             {
                 Name:   "lint", 
                 Usage:  "Lint Go code",
-                Action: config.WithConfig(checkLint),
+                Action: config.RunWithConfig(checkLint),
             },
         },
     }

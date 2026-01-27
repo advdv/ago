@@ -13,12 +13,12 @@ func devCmd() *cli.Command {
 			{
 				Name:   "fmt",
 				Usage:  "Format Go code using golangci-lint",
-				Action: config.WithConfig(devFmt),
+				Action: config.RunWithConfig(devFmt),
 			},
 			{
 				Name:   "gen",
 				Usage:  "Run go generate",
-				Action: config.WithConfig(devGen),
+				Action: config.RunWithConfig(devGen),
 			},
 		},
 	}

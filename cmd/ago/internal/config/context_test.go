@@ -42,20 +42,7 @@ func TestContext(t *testing.T) {
 		}
 	})
 
-	t.Run("MustFromContext panics when not set", func(t *testing.T) {
-		t.Parallel()
-		ctx := context.Background()
-
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("expected panic, got none")
-			}
-		}()
-
-		config.MustFromContext(ctx)
-	})
-
-	t.Run("MustFromContext returns config when set", func(t *testing.T) {
+	t.Run("Ensure returns existing config from context", func(t *testing.T) {
 		t.Parallel()
 		ctx := context.Background()
 		cfg := config.Config{
@@ -64,10 +51,15 @@ func TestContext(t *testing.T) {
 		}
 
 		ctx = config.WithContext(ctx, cfg)
-		got := config.MustFromContext(ctx)
-
-		if got.Inner.Version != cfg.Inner.Version {
-			t.Errorf("expected version %q, got %q", cfg.Inner.Version, got.Inner.Version)
+		newCtx, got, err := config.Ensure(ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.ProjectDir != cfg.ProjectDir {
+			t.Errorf("expected projectDir %q, got %q", cfg.ProjectDir, got.ProjectDir)
+		}
+		if newCtx != ctx {
+			t.Error("expected same context when config already present")
 		}
 	})
 }

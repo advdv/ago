@@ -18,7 +18,7 @@ func bootstrapCmd() *cli.Command {
 	return &cli.Command{
 		Name:   "bootstrap",
 		Usage:  "Bootstrap CDK in the AWS account",
-		Action: config.WithConfig(runBootstrap),
+		Action: config.RunWithConfig(runBootstrap),
 	}
 }
 
@@ -46,7 +46,7 @@ func doBootstrap(ctx context.Context, cfg config.Config, opts bootstrapOptions) 
 
 	profile, ok := cdkCtx["admin-profile"].(string)
 	if !ok || profile == "" {
-		return errors.New("admin-profile not found in cdk.json - was 'ago cdk create-project-account' run?")
+		return errors.New("admin-profile not found in cdk.json - was 'ago infra create-aws-account' run?")
 	}
 
 	prefix, err := detectPrefix(cdkCtx)

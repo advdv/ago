@@ -13,9 +13,9 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func createProjectAccountCmd() *cli.Command {
+func createAWSAccountCmd() *cli.Command {
 	return &cli.Command{
-		Name:  "create-project-account",
+		Name:  "create-aws-account",
 		Usage: "Create a new AWS account in the organization for a project",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -39,7 +39,7 @@ func createProjectAccountCmd() *cli.Command {
 				Value: true,
 			},
 		},
-		Action: config.WithConfig(runCreateProjectAccount),
+		Action: config.RunWithConfig(runCreateProjectAccount),
 	}
 }
 

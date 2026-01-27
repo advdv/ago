@@ -13,22 +13,22 @@ func checkCmd() *cli.Command {
 			{
 				Name:   "test",
 				Usage:  "Run Go tests",
-				Action: config.WithConfig(checkTests),
+				Action: config.RunWithConfig(checkTests),
 			},
 			{
 				Name:   "lint",
 				Usage:  "Lint Go code using golangci-lint",
-				Action: config.WithConfig(checkLint),
+				Action: config.RunWithConfig(checkLint),
 			},
 			{
 				Name:   "compiles",
 				Usage:  "Check that all packages compile",
-				Action: config.WithConfig(checkCompiles),
+				Action: config.RunWithConfig(checkCompiles),
 			},
 			{
 				Name:   "uncommitted-changes",
 				Usage:  "Check generated code is checked-in",
-				Action: config.WithConfig(checkUncommittedChanges),
+				Action: config.RunWithConfig(checkUncommittedChanges),
 			},
 		},
 	}

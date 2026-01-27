@@ -2,49 +2,41 @@ package main
 
 import (
 	"context"
-	"io"
 	"os"
 
 	"github.com/advdv/ago/cmd/ago/internal/config"
 	"github.com/urfave/cli/v3"
 )
 
-func destroyCmd() *cli.Command {
+func deployCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "destroy",
-		Usage:     "Destroy CDK stacks",
+		Name:      "deploy",
+		Usage:     "Deploy CDK stacks",
 		ArgsUsage: "[deployment]",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
-				Name:  "all",
-				Usage: "Destroy all stacks",
+				Name:  "hotswap",
+				Usage: "Enable CDK hotswap for faster iterations",
 			},
 			&cli.BoolFlag{
-				Name:  "force",
-				Usage: "Skip confirmation prompts",
+				Name:  "all",
+				Usage: "Deploy all stacks",
 			},
 		},
-		Action: config.WithConfig(runDestroy),
+		Action: config.RunWithConfig(runDeploy),
 	}
 }
 
-type cdkDestroyOptions struct {
-	Deployment string
-	All        bool
-	Force      bool
-	Output     io.Writer
-}
-
-func runDestroy(ctx context.Context, cmd *cli.Command, cfg config.Config) error {
-	return doDestroy(ctx, cfg, cdkDestroyOptions{
+func runDeploy(ctx context.Context, cmd *cli.Command, cfg config.Config) error {
+	return doDeploy(ctx, cfg, cdkCommandOptions{
 		Deployment: cmd.Args().First(),
 		All:        cmd.Bool("all"),
-		Force:      cmd.Bool("force"),
+		Hotswap:    cmd.Bool("hotswap"),
 		Output:     os.Stdout,
 	})
 }
 
-func doDestroy(ctx context.Context, cfg config.Config, opts cdkDestroyOptions) error {
+func doDeploy(ctx context.Context, cfg config.Config, opts cdkCommandOptions) error {
 	cdk, err := loadCDKContext(cfg)
 	if err != nil {
 		return err
@@ -55,10 +47,7 @@ func doDestroy(ctx context.Context, cfg config.Config, opts cdkDestroyOptions) e
 
 	username, usernameErr := getCallerUsername(ctx, exec, cdk.Qualifier, cdk.CDKContext)
 
-	deployment, err := resolveDeploymentIdent(cdkCommandOptions{
-		Deployment: opts.Deployment,
-		All:        opts.All,
-	}, cdk.Prefix, cdk.CDKContext, username, usernameErr)
+	deployment, err := resolveDeploymentIdent(opts, cdk.Prefix, cdk.CDKContext, username, usernameErr)
 	if err != nil {
 		return err
 	}
@@ -77,14 +66,15 @@ func doDestroy(ctx context.Context, cfg config.Config, opts cdkDestroyOptions) e
 	args := buildCDKArgs(profile, cdk.Qualifier, cdk.Prefix, userGroups)
 
 	if opts.All {
-		args = append(args, "--all")
+		args = append(args, "--all", "--require-approval", "never")
 	} else {
 		args = append(args, cdk.Qualifier+"*Shared", cdk.Qualifier+"*"+deployment)
+		args = append(args, "--require-approval", "never")
 	}
 
-	if opts.Force {
-		args = append(args, "--force")
+	if opts.Hotswap {
+		args = append(args, "--hotswap")
 	}
 
-	return runCDKCommand(ctx, cdkExec, "destroy", args)
+	return runCDKCommand(ctx, cdkExec, "deploy", args)
 }

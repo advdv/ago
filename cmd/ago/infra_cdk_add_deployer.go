@@ -25,7 +25,7 @@ func addDeployerCmd() *cli.Command {
 				Usage: "Add to dev-deployers group instead of full deployers",
 			},
 		},
-		Action: config.WithConfig(runAddDeployer),
+		Action: config.RunWithConfig(runAddDeployer),
 	}
 }
 

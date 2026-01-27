@@ -17,7 +17,7 @@ func removeDeployerCmd() *cli.Command {
 		Name:      "remove-deployer",
 		Usage:     "Remove a deployer user from the project configuration",
 		ArgsUsage: "<username>",
-		Action:    config.WithConfig(runRemoveDeployer),
+		Action:    config.RunWithConfig(runRemoveDeployer),
 	}
 }
 

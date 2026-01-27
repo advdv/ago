@@ -8,35 +8,30 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func deployCmd() *cli.Command {
+func diffCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "deploy",
-		Usage:     "Deploy CDK stacks",
+		Name:      "diff",
+		Usage:     "Show CDK stack differences",
 		ArgsUsage: "[deployment]",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
-				Name:  "hotswap",
-				Usage: "Enable CDK hotswap for faster iterations",
-			},
-			&cli.BoolFlag{
 				Name:  "all",
-				Usage: "Deploy all stacks",
+				Usage: "Diff all stacks",
 			},
 		},
-		Action: config.WithConfig(runDeploy),
+		Action: config.RunWithConfig(runDiff),
 	}
 }
 
-func runDeploy(ctx context.Context, cmd *cli.Command, cfg config.Config) error {
-	return doDeploy(ctx, cfg, cdkCommandOptions{
+func runDiff(ctx context.Context, cmd *cli.Command, cfg config.Config) error {
+	return doDiff(ctx, cfg, cdkCommandOptions{
 		Deployment: cmd.Args().First(),
 		All:        cmd.Bool("all"),
-		Hotswap:    cmd.Bool("hotswap"),
 		Output:     os.Stdout,
 	})
 }
 
-func doDeploy(ctx context.Context, cfg config.Config, opts cdkCommandOptions) error {
+func doDiff(ctx context.Context, cfg config.Config, opts cdkCommandOptions) error {
 	cdk, err := loadCDKContext(cfg)
 	if err != nil {
 		return err
@@ -59,22 +54,13 @@ func doDeploy(ctx context.Context, cfg config.Config, opts cdkCommandOptions) er
 		return err
 	}
 
-	if err := checkDeploymentPermission(deployment, isFullDeployer(userGroups, cdk.Qualifier)); err != nil {
-		return err
-	}
-
 	args := buildCDKArgs(profile, cdk.Qualifier, cdk.Prefix, userGroups)
 
 	if opts.All {
-		args = append(args, "--all", "--require-approval", "never")
+		args = append(args, "--all")
 	} else {
 		args = append(args, cdk.Qualifier+"*Shared", cdk.Qualifier+"*"+deployment)
-		args = append(args, "--require-approval", "never")
 	}
 
-	if opts.Hotswap {
-		args = append(args, "--hotswap")
-	}
-
-	return runCDKCommand(ctx, cdkExec, "deploy", args)
+	return runCDKCommand(ctx, cdkExec, "diff", args)
 }

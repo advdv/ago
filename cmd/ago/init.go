@@ -11,6 +11,7 @@ import (
 
 	"github.com/advdv/ago/cmd/ago/internal/cmdexec"
 	"github.com/advdv/ago/cmd/ago/internal/config"
+	"github.com/advdv/ago/cmd/ago/internal/initwizard"
 	"github.com/cockroachdb/errors"
 	"github.com/urfave/cli/v3"
 )
@@ -282,44 +283,12 @@ func DefaultMiseConfig() MiseConfig {
 	}
 }
 
-func parseSecondaryRegions(value string) []string {
-	value = strings.TrimSpace(value)
-	if value == "" || strings.EqualFold(value, "none") {
-		return []string{}
-	}
-	parts := strings.Split(value, ",")
-	regions := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if r := strings.TrimSpace(p); r != "" {
-			regions = append(regions, r)
-		}
-	}
-	return regions
-}
-
 func initCmd() *cli.Command {
 	return &cli.Command{
 		Name:      "init",
 		Usage:     "Initialize a new ago project",
 		ArgsUsage: "[directory]",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:     "management-profile",
-				Usage:    "AWS profile for the management account (used to create project account)",
-				Required: true,
-			},
-			&cli.StringFlag{
-				Name:  "region",
-				Usage: "AWS region for the project account",
-				Value: "eu-central-1",
-			},
-			&cli.StringFlag{
-				Name:  "secondary-regions",
-				Usage: "Comma-separated list of secondary AWS regions (use 'none' to disable)",
-				Value: "eu-north-1",
-			},
-		},
-		Action: runInit,
+		Action:    runInit,
 	}
 }
 
@@ -339,16 +308,27 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 	}
 	dir = absDir
 
+	defaultIdent := filepath.Base(dir)
+	wizard := initwizard.New(initwizard.NewFormBuilder(), initwizard.NewInteractiveRunner())
+	result, err := wizard.Run(defaultIdent)
+	if err != nil {
+		return errors.Wrap(err, "wizard failed")
+	}
+
 	cdkConfig := DefaultCDKConfigFromDir(dir)
-	cdkConfig.SecondaryRegions = parseSecondaryRegions(cmd.String("secondary-regions"))
+	cdkConfig.Prefix = result.ProjectIdent + "-"
+	cdkConfig.Qualifier = result.ProjectIdent
+	cdkConfig.PrimaryRegion = result.PrimaryRegion
+	cdkConfig.SecondaryRegions = result.SecondaryRegions
 
 	return doInit(ctx, InitOptions{
 		Dir:               dir,
 		MiseConfig:        DefaultMiseConfig(),
 		CDKConfig:         cdkConfig,
 		RunInstall:        true,
-		ManagementProfile: cmd.String("management-profile"),
-		Region:            cmd.String("region"),
+		ManagementProfile: result.ManagementProfile,
+		Region:            result.PrimaryRegion,
+		InitialDeployer:   result.InitialDeployer,
 	})
 }
 
@@ -359,6 +339,7 @@ type InitOptions struct {
 	RunInstall          bool
 	ManagementProfile   string
 	Region              string
+	InitialDeployer     string
 	SkipAccountCreation bool
 	SkipCDKVerify       bool
 }
@@ -406,6 +387,12 @@ func doInit(ctx context.Context, opts InitOptions) error {
 
 	if err := configureCDKProject(ctx, exec, opts.Dir, opts.CDKConfig); err != nil {
 		return err
+	}
+
+	if opts.InitialDeployer != "" {
+		if err := exec.Mise(ctx, "ago", "infra", "cdk", "add-deployer", opts.InitialDeployer); err != nil {
+			return errors.Wrap(err, "failed to add initial deployer")
+		}
 	}
 
 	if !opts.SkipAccountCreation {

@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"os"
 
 	"github.com/urfave/cli/v3"
 )
@@ -22,21 +23,40 @@ func FromContext(ctx context.Context) (Config, bool) {
 	return cfg, ok
 }
 
-func MustFromContext(ctx context.Context) Config {
-	cfg, ok := FromContext(ctx)
-	if !ok {
-		panic("config.Config not found in context")
+var defaultFinder = NewFinder(NewLoader())
+
+// Ensure returns config from context if present, otherwise loads it from disk.
+// This enables lazy config loading - config is only loaded when an action needs it.
+func Ensure(ctx context.Context) (context.Context, Config, error) {
+	if cfg, ok := FromContext(ctx); ok {
+		return ctx, cfg, nil
 	}
-	return cfg
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ctx, Config{}, err
+	}
+
+	inner, projectDir, err := defaultFinder.Find(cwd)
+	if err != nil {
+		return ctx, Config{}, err
+	}
+
+	cfg := Config{Inner: inner, ProjectDir: projectDir}
+	return WithContext(ctx, cfg), cfg, nil
 }
 
 // ActionFunc is a command action that receives the config.
 type ActionFunc func(ctx context.Context, cmd *cli.Command, cfg Config) error
 
-// WithConfig wraps an ActionFunc to automatically extract config from context.
-func WithConfig(fn ActionFunc) cli.ActionFunc {
+// RunWithConfig wraps an ActionFunc to lazily load config when the action runs.
+// Config is only loaded when an actual command action executes, not when showing help.
+func RunWithConfig(fn ActionFunc) cli.ActionFunc {
 	return func(ctx context.Context, cmd *cli.Command) error {
-		cfg := MustFromContext(ctx)
+		ctx, cfg, err := Ensure(ctx)
+		if err != nil {
+			return err
+		}
 		return fn(ctx, cmd, cfg)
 	}
 }
