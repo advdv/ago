@@ -97,7 +97,7 @@ func TestWriter(t *testing.T) {
 
 	t.Run("writes config to writer", func(t *testing.T) {
 		t.Parallel()
-		cfg := config.Config{Version: "1"}
+		cfg := config.InnerConfig{Version: "1"}
 		w := config.NewWriter()
 
 		var buf bytes.Buffer
@@ -179,7 +179,7 @@ func TestWriteToFile(t *testing.T) {
 	t.Run("writes config to file", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		cfg := config.Config{Version: "1"}
+		cfg := config.InnerConfig{Version: "1"}
 
 		if err := config.WriteToFile(dir, cfg, config.NewWriter()); err != nil {
 			t.Fatalf("unexpected error: %v", err)

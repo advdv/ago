@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/advdv/ago/cmd/ago/internal/config"
 	"github.com/cockroachdb/errors"
 	"github.com/urfave/cli/v3"
 )
@@ -23,67 +24,50 @@ func addDeployerCmd() *cli.Command {
 				Name:  "dev",
 				Usage: "Add to dev-deployers group instead of full deployers",
 			},
-			&cli.StringFlag{
-				Name:  "project-dir",
-				Usage: "Project directory (defaults to current directory)",
-			},
 		},
-		Action: runAddDeployer,
+		Action: config.WithConfig(runAddDeployer),
 	}
 }
 
 type deployerOptions struct {
-	ProjectDir string
-	Username   string
-	DevOnly    bool
-	Output     io.Writer
+	Username string
+	DevOnly  bool
+	Output   io.Writer
 }
 
-func runAddDeployer(ctx context.Context, cmd *cli.Command) error {
+func runAddDeployer(ctx context.Context, cmd *cli.Command, cfg config.Config) error {
 	username := cmd.Args().First()
 	if username == "" {
 		return errors.New("username argument is required")
 	}
 
-	projectDir := cmd.String("project-dir")
-	if projectDir == "" {
-		var err error
-		projectDir, err = os.Getwd()
-		if err != nil {
-			return errors.Wrap(err, "failed to get current working directory")
-		}
-	}
-
-	opts := deployerOptions{
-		ProjectDir: projectDir,
-		Username:   username,
-		DevOnly:    cmd.Bool("dev"),
-		Output:     os.Stdout,
-	}
-
-	return doAddDeployer(ctx, opts)
+	return doAddDeployer(ctx, cfg, deployerOptions{
+		Username: username,
+		DevOnly:  cmd.Bool("dev"),
+		Output:   os.Stdout,
+	})
 }
 
-func doAddDeployer(ctx context.Context, opts deployerOptions) error {
+func doAddDeployer(_ context.Context, cfg config.Config, opts deployerOptions) error {
 	if err := validateDeployerUsername(opts.Username); err != nil {
 		return err
 	}
 
-	cdkDir := filepath.Join(opts.ProjectDir, "infra", "cdk", "cdk")
+	cdkDir := filepath.Join(cfg.ProjectDir, "infra", "cdk", "cdk")
 	contextPath := filepath.Join(cdkDir, "cdk.context.json")
 
-	cdkContext, err := getCDKContext(ctx, cdkDir)
+	cdkCtx, err := getCDKContext(cdkDir)
 	if err != nil {
 		return err
 	}
 
-	prefix, err := detectPrefix(cdkContext)
+	prefix, err := detectPrefix(cdkCtx)
 	if err != nil {
 		return err
 	}
 
-	deployers := extractStringSlice(cdkContext, prefix+"deployers")
-	devDeployers := extractStringSlice(cdkContext, prefix+"dev-deployers")
+	deployers := extractStringSlice(cdkCtx, prefix+"deployers")
+	devDeployers := extractStringSlice(cdkCtx, prefix+"dev-deployers")
 	isFirstDeployer := len(deployers) == 0 && len(devDeployers) == 0
 
 	if slices.Contains(deployers, opts.Username) {
@@ -109,7 +93,7 @@ func doAddDeployer(ctx context.Context, opts deployerOptions) error {
 	}
 
 	deploymentIdent := "Dev" + opts.Username
-	deployments := extractStringSlice(cdkContext, prefix+"deployments")
+	deployments := extractStringSlice(cdkCtx, prefix+"deployments")
 	if !slices.Contains(deployments, deploymentIdent) {
 		deployments = append(deployments, deploymentIdent)
 		contextJSON[prefix+"deployments"] = deployments
@@ -120,7 +104,7 @@ func doAddDeployer(ctx context.Context, opts deployerOptions) error {
 		return err
 	}
 
-	qualifier, _ := cdkContext[prefix+"qualifier"].(string)
+	qualifier, _ := cdkCtx[prefix+"qualifier"].(string)
 	if isFirstDeployer && qualifier != "" {
 		if err := setCDKJSONProfile(cdkDir, qualifier, opts.Username); err != nil {
 			writeOutputf(opts.Output, "Warning: could not update cdk.json profile: %v\n", err)

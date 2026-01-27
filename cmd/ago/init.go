@@ -5,11 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/template"
 
+	"github.com/advdv/ago/cmd/ago/internal/cmdexec"
+	"github.com/advdv/ago/cmd/ago/internal/config"
 	"github.com/cockroachdb/errors"
 	"github.com/urfave/cli/v3"
 )
@@ -369,6 +370,8 @@ type InitOptions struct {
 }
 
 func doInit(ctx context.Context, opts InitOptions) error {
+	exec := cmdexec.NewWithDir(opts.Dir).WithOutput(os.Stdout, os.Stderr)
+
 	if err := checkMiseInstalled(ctx); err != nil {
 		return err
 	}
@@ -377,7 +380,11 @@ func doInit(ctx context.Context, opts InitOptions) error {
 		return err
 	}
 
-	if err := initGitRepo(ctx, opts.Dir); err != nil {
+	if err := exec.Run(ctx, "git", "init"); err != nil {
+		return errors.Wrap(err, "git init failed")
+	}
+
+	if err := config.WriteToFile(opts.Dir, config.Default(), config.NewWriter()); err != nil {
 		return err
 	}
 
@@ -385,32 +392,32 @@ func doInit(ctx context.Context, opts InitOptions) error {
 		return err
 	}
 
-	if err := trustMiseConfig(ctx, opts.Dir); err != nil {
-		return err
+	if err := exec.Run(ctx, "mise", "trust"); err != nil {
+		return errors.Wrap(err, "mise trust failed")
 	}
 
 	if opts.RunInstall {
-		if err := runMiseInstall(ctx, opts.Dir); err != nil {
-			return err
+		if err := exec.Run(ctx, "mise", "install"); err != nil {
+			return errors.Wrap(err, "mise install failed")
 		}
 	}
 
-	if err := installAmpSkills(ctx, opts.Dir, defaultSkills); err != nil {
+	if err := installAmpSkills(ctx, exec); err != nil {
 		return err
 	}
 
-	if err := setupCDKProject(ctx, opts.Dir); err != nil {
+	if err := setupCDKProject(ctx, exec, opts.Dir); err != nil {
 		return err
 	}
 
-	if err := configureCDKProject(ctx, opts.Dir, opts.CDKConfig); err != nil {
+	if err := configureCDKProject(ctx, exec, opts.Dir, opts.CDKConfig); err != nil {
 		return err
 	}
 
 	if !opts.SkipAccountCreation {
+		cfg := config.Config{ProjectDir: opts.Dir}
 		projectName := filepath.Base(opts.Dir)
-		if err := doCreateProjectAccount(ctx, createAccountOptions{
-			ProjectDir:        opts.Dir,
+		if err := doCreateProjectAccount(ctx, cfg, createAccountOptions{
 			ProjectName:       projectName,
 			ManagementProfile: opts.ManagementProfile,
 			Region:            opts.Region,
@@ -423,7 +430,7 @@ func doInit(ctx context.Context, opts InitOptions) error {
 	}
 
 	if !opts.SkipCDKVerify {
-		if err := verifyCDKSetup(ctx, opts.Dir, opts.CDKConfig); err != nil {
+		if err := verifyCDKSetup(ctx, exec, opts.CDKConfig); err != nil {
 			return err
 		}
 	}
@@ -431,37 +438,17 @@ func doInit(ctx context.Context, opts InitOptions) error {
 	return nil
 }
 
-func verifyCDKSetup(ctx context.Context, dir string, cfg CDKConfig) error {
-	cdkDir := filepath.Join(dir, "infra", "cdk", "cdk")
-
-	// Pass deployer-groups context so cdk ls shows all stacks including deployments.
-	// The deployers group name follows the pattern {qualifier}-deployers.
+func verifyCDKSetup(ctx context.Context, exec cmdexec.Executor, cfg CDKConfig) error {
+	cdkExec := exec.InSubdir("infra/cdk/cdk")
 	deployerGroupsCtx := cfg.Prefix + "deployer-groups=" + cfg.Qualifier + "-deployers"
 
-	cmd := exec.CommandContext(ctx, "mise", "exec", "--",
-		"cdk", "ls", "--context", deployerGroupsCtx)
-	cmd.Dir = cdkDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return errors.Wrap(err, "cdk ls failed - CDK setup may be incomplete")
-	}
-	return nil
+	return cdkExec.Mise(ctx, "cdk", "ls", "--context", deployerGroupsCtx)
 }
 
 func checkMiseInstalled(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "mise", "--version")
-	if err := cmd.Run(); err != nil {
+	exec := cmdexec.NewWithDir(".")
+	if _, err := exec.Output(ctx, "mise", "--version"); err != nil {
 		return errors.New("mise is not installed or not in PATH")
-	}
-	return nil
-}
-
-func initGitRepo(ctx context.Context, dir string) error {
-	cmd := exec.CommandContext(ctx, "git", "init")
-	cmd.Dir = dir
-	if err := cmd.Run(); err != nil {
-		return errors.Wrap(err, "git init failed")
 	}
 	return nil
 }
@@ -507,27 +494,7 @@ func writeMiseToml(dir string, cfg MiseConfig) error {
 	return nil
 }
 
-func trustMiseConfig(ctx context.Context, dir string) error {
-	cmd := exec.CommandContext(ctx, "mise", "trust")
-	cmd.Dir = dir
-	if err := cmd.Run(); err != nil {
-		return errors.Wrap(err, "mise trust failed")
-	}
-	return nil
-}
-
-func runMiseInstall(ctx context.Context, dir string) error {
-	cmd := exec.CommandContext(ctx, "mise", "install")
-	cmd.Dir = dir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return errors.Wrap(err, "mise install failed")
-	}
-	return nil
-}
-
-func configureCDKProject(ctx context.Context, dir string, cfg CDKConfig) error {
+func configureCDKProject(ctx context.Context, exec cmdexec.Executor, dir string, cfg CDKConfig) error {
 	infraDir := filepath.Join(dir, "infra")
 	cdkPkgDir := filepath.Join(infraDir, "cdk")
 	cdkDir := filepath.Join(cdkPkgDir, "cdk")
@@ -550,8 +517,13 @@ func configureCDKProject(ctx context.Context, dir string, cfg CDKConfig) error {
 		return err
 	}
 
-	if err := addAgcdkutilDependency(ctx, infraDir); err != nil {
-		return err
+	infraExec := exec.InSubdir("infra")
+	if err := infraExec.Run(ctx, "go", "get", "github.com/advdv/ago/agcdkutil"); err != nil {
+		return errors.Wrap(err, "failed to add agcdkutil dependency")
+	}
+
+	if err := infraExec.Run(ctx, "go", "mod", "tidy"); err != nil {
+		return errors.Wrap(err, "go mod tidy failed")
 	}
 
 	return nil
@@ -622,27 +594,7 @@ func writeGolangciLintConfig(infraDir string) error {
 	return nil
 }
 
-func addAgcdkutilDependency(ctx context.Context, infraDir string) error {
-	cmd := exec.CommandContext(ctx, "go", "get", "github.com/advdv/ago/agcdkutil")
-	cmd.Dir = infraDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return errors.Wrap(err, "failed to add agcdkutil dependency")
-	}
-
-	tidyCmd := exec.CommandContext(ctx, "go", "mod", "tidy")
-	tidyCmd.Dir = infraDir
-	tidyCmd.Stdout = os.Stdout
-	tidyCmd.Stderr = os.Stderr
-	if err := tidyCmd.Run(); err != nil {
-		return errors.Wrap(err, "go mod tidy failed")
-	}
-
-	return nil
-}
-
-func setupCDKProject(ctx context.Context, dir string) error {
+func setupCDKProject(ctx context.Context, exec cmdexec.Executor, dir string) error {
 	infraDir := filepath.Join(dir, "infra")
 	cdkDir := filepath.Join(infraDir, "cdk", "cdk")
 
@@ -650,21 +602,11 @@ func setupCDKProject(ctx context.Context, dir string) error {
 		return errors.Wrap(err, "failed to create CDK directory")
 	}
 
-	// Initialize CDK Go project
-	// We use "mise exec" to run cdk from the project root where mise.toml is located,
-	// so mise can provide the cdk binary from npm:aws-cdk.
-	initCmd := exec.CommandContext(ctx, "mise", "exec", "--", "cdk", "init", "app", "--language=go", "--generate-only")
-	// cdk init requires the target directory as current working directory
-	initCmd.Dir = cdkDir
-	// But we need mise from the parent, so we set MISE_PROJECT_DIR
-	initCmd.Env = append(os.Environ(), "MISE_PROJECT_DIR="+dir)
-	initCmd.Stdout = os.Stdout
-	initCmd.Stderr = os.Stderr
-	if err := initCmd.Run(); err != nil {
+	cdkExec := exec.InSubdir("infra/cdk/cdk")
+	if err := cdkExec.Mise(ctx, "cdk", "init", "app", "--language=go", "--generate-only"); err != nil {
 		return errors.Wrap(err, "cdk init failed")
 	}
 
-	// Move go.mod and go.sum from cdkDir to infraDir so ./infra is the Go module root
 	for _, filename := range []string{"go.mod", "go.sum"} {
 		src := filepath.Join(cdkDir, filename)
 		dst := filepath.Join(infraDir, filename)
@@ -675,7 +617,6 @@ func setupCDKProject(ctx context.Context, dir string) error {
 		}
 	}
 
-	// Append "cdk" to .gitignore so compiled binary doesn't get committed
 	gitignorePath := filepath.Join(cdkDir, ".gitignore")
 	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -687,7 +628,6 @@ func setupCDKProject(ctx context.Context, dir string) error {
 	}
 	f.Close()
 
-	// Remove the generated test file
 	entries, err := os.ReadDir(cdkDir)
 	if err != nil {
 		return errors.Wrap(err, "failed to read CDK directory")
@@ -701,7 +641,6 @@ func setupCDKProject(ctx context.Context, dir string) error {
 		}
 	}
 
-	// Remove the generated README.md
 	readmePath := filepath.Join(cdkDir, "README.md")
 	if err := os.Remove(readmePath); err != nil && !os.IsNotExist(err) {
 		return errors.Wrap(err, "failed to remove README.md")
@@ -715,14 +654,10 @@ var defaultSkills = []string{
 	"setting-up-cdk-app",
 }
 
-func installAmpSkills(ctx context.Context, dir string, skills []string) error {
-	for _, skill := range skills {
+func installAmpSkills(ctx context.Context, exec cmdexec.Executor) error {
+	for _, skill := range defaultSkills {
 		skillURL := "https://github.com/advdv/ago/tree/main/.agents/skills/" + skill
-		cmd := exec.CommandContext(ctx, "amp", "skill", "add", skillURL)
-		cmd.Dir = dir
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
+		if err := exec.Run(ctx, "amp", "skill", "add", skillURL); err != nil {
 			return errors.Wrapf(err, "failed to install amp skill %q", skill)
 		}
 	}

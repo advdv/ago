@@ -13,22 +13,22 @@ func TestContext(t *testing.T) {
 	t.Run("WithContext and FromContext", func(t *testing.T) {
 		t.Parallel()
 		ctx := context.Background()
-		cfgCtx := config.Context{
-			Config:     config.Config{Version: "1"},
+		cfg := config.Config{
+			Inner:      config.InnerConfig{Version: "1"},
 			ProjectDir: "/test/dir",
 		}
 
-		ctx = config.WithContext(ctx, cfgCtx)
+		ctx = config.WithContext(ctx, cfg)
 		got, ok := config.FromContext(ctx)
 
 		if !ok {
-			t.Fatal("expected config context to be found")
+			t.Fatal("expected config to be found")
 		}
-		if got.Config.Version != cfgCtx.Config.Version {
-			t.Errorf("expected version %q, got %q", cfgCtx.Config.Version, got.Config.Version)
+		if got.Inner.Version != cfg.Inner.Version {
+			t.Errorf("expected version %q, got %q", cfg.Inner.Version, got.Inner.Version)
 		}
-		if got.ProjectDir != cfgCtx.ProjectDir {
-			t.Errorf("expected projectDir %q, got %q", cfgCtx.ProjectDir, got.ProjectDir)
+		if got.ProjectDir != cfg.ProjectDir {
+			t.Errorf("expected projectDir %q, got %q", cfg.ProjectDir, got.ProjectDir)
 		}
 	})
 
@@ -38,7 +38,7 @@ func TestContext(t *testing.T) {
 
 		_, ok := config.FromContext(ctx)
 		if ok {
-			t.Error("expected config context to not be found")
+			t.Error("expected config to not be found")
 		}
 	})
 
@@ -58,16 +58,16 @@ func TestContext(t *testing.T) {
 	t.Run("MustFromContext returns config when set", func(t *testing.T) {
 		t.Parallel()
 		ctx := context.Background()
-		cfgCtx := config.Context{
-			Config:     config.Config{Version: "1"},
+		cfg := config.Config{
+			Inner:      config.InnerConfig{Version: "1"},
 			ProjectDir: "/test/dir",
 		}
 
-		ctx = config.WithContext(ctx, cfgCtx)
+		ctx = config.WithContext(ctx, cfg)
 		got := config.MustFromContext(ctx)
 
-		if got.Config.Version != cfgCtx.Config.Version {
-			t.Errorf("expected version %q, got %q", cfgCtx.Config.Version, got.Config.Version)
+		if got.Inner.Version != cfg.Inner.Version {
+			t.Errorf("expected version %q, got %q", cfg.Inner.Version, got.Inner.Version)
 		}
 	})
 }

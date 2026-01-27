@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/advdv/ago/cmd/ago/internal/cmdexec"
 )
 
 func TestEnsureEmptyDir(t *testing.T) {
@@ -189,9 +191,10 @@ func TestInitGitRepo(t *testing.T) {
 		t.Parallel()
 		tmpDir := t.TempDir()
 
-		err := initGitRepo(context.Background(), tmpDir)
+		exec := cmdexec.NewWithDir(tmpDir)
+		err := exec.Run(context.Background(), "git", "init")
 		if err != nil {
-			t.Fatalf("initGitRepo failed: %v", err)
+			t.Fatalf("git init failed: %v", err)
 		}
 
 		gitDir := filepath.Join(tmpDir, ".git")

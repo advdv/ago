@@ -3,9 +3,8 @@ package main
 import (
 	"context"
 	"os"
-	"path/filepath"
 
-	"github.com/cockroachdb/errors"
+	"github.com/advdv/ago/cmd/ago/internal/config"
 	"github.com/urfave/cli/v3"
 )
 
@@ -19,72 +18,49 @@ func diffCmd() *cli.Command {
 				Name:  "all",
 				Usage: "Diff all stacks",
 			},
-			&cli.StringFlag{
-				Name:  "project-dir",
-				Usage: "Project directory (defaults to current directory)",
-			},
 		},
-		Action: runDiff,
+		Action: config.WithConfig(runDiff),
 	}
 }
 
-func runDiff(ctx context.Context, cmd *cli.Command) error {
-	projectDir := cmd.String("project-dir")
-	if projectDir == "" {
-		var err error
-		projectDir, err = os.Getwd()
-		if err != nil {
-			return errors.Wrap(err, "failed to get current working directory")
-		}
-	}
-
-	return doDiff(ctx, cdkCommandOptions{
-		ProjectDir: projectDir,
+func runDiff(ctx context.Context, cmd *cli.Command, cfg config.Config) error {
+	return doDiff(ctx, cfg, cdkCommandOptions{
 		Deployment: cmd.Args().First(),
 		All:        cmd.Bool("all"),
 		Output:     os.Stdout,
 	})
 }
 
-func doDiff(ctx context.Context, opts cdkCommandOptions) error {
-	cdkDir := filepath.Join(opts.ProjectDir, "infra", "cdk", "cdk")
-
-	cdkContext, err := getCDKContext(ctx, cdkDir)
+func doDiff(ctx context.Context, cfg config.Config, opts cdkCommandOptions) error {
+	cdk, err := loadCDKContext(cfg)
 	if err != nil {
 		return err
 	}
 
-	prefix, err := detectPrefix(cdkContext)
+	exec := cdk.Exec.WithOutput(opts.Output, opts.Output)
+	cdkExec := cdk.CDKExec.WithOutput(opts.Output, opts.Output)
+
+	username, usernameErr := getCallerUsername(ctx, exec, cdk.Qualifier, cdk.CDKContext)
+
+	deployment, err := resolveDeploymentIdent(opts, cdk.Prefix, cdk.CDKContext, username, usernameErr)
 	if err != nil {
 		return err
 	}
 
-	qualifier, ok := cdkContext[prefix+"qualifier"].(string)
-	if !ok || qualifier == "" {
-		return errors.Errorf("qualifier not found at context key %q", prefix+"qualifier")
-	}
+	profile := resolveProfile(ctx, exec, cdk.CDKContext, cdk.Qualifier, username)
 
-	username, usernameErr := getCallerUsername(ctx, opts.ProjectDir, qualifier, cdkContext)
-
-	deployment, err := resolveDeploymentIdent(ctx, opts, "", prefix, cdkContext, username, usernameErr)
+	userGroups, err := getUserGroups(ctx, exec, profile, username)
 	if err != nil {
 		return err
 	}
 
-	profile := resolveProfile(ctx, opts.ProjectDir, cdkContext, qualifier, username)
-
-	userGroups, err := getUserGroups(ctx, opts.ProjectDir, profile, username)
-	if err != nil {
-		return err
-	}
-
-	args := buildCDKArgs(profile, qualifier, prefix, userGroups)
+	args := buildCDKArgs(profile, cdk.Qualifier, cdk.Prefix, userGroups)
 
 	if opts.All {
 		args = append(args, "--all")
 	} else {
-		args = append(args, qualifier+"*Shared", qualifier+"*"+deployment)
+		args = append(args, cdk.Qualifier+"*Shared", cdk.Qualifier+"*"+deployment)
 	}
 
-	return runCDKCommand(ctx, opts.ProjectDir, cdkDir, opts.Output, "diff", args)
+	return runCDKCommand(ctx, cdkExec, "diff", args)
 }

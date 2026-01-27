@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/advdv/ago/cmd/ago/internal/config"
 	"github.com/urfave/cli/v3"
 )
 
@@ -12,12 +13,12 @@ func devCmd() *cli.Command {
 			{
 				Name:   "fmt",
 				Usage:  "Format Go code using golangci-lint",
-				Action: devFmt,
+				Action: config.WithConfig(devFmt),
 			},
 			{
 				Name:   "gen",
 				Usage:  "Run go generate",
-				Action: devGen,
+				Action: config.WithConfig(devGen),
 			},
 		},
 	}

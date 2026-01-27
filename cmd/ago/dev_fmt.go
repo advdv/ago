@@ -3,34 +3,26 @@ package main
 import (
 	"context"
 	"os"
-	"os/exec"
 
-	"github.com/bitfield/script"
-	"github.com/cockroachdb/errors"
+	"github.com/advdv/ago/cmd/ago/internal/cmdexec"
+	"github.com/advdv/ago/cmd/ago/internal/config"
 	"github.com/urfave/cli/v3"
 )
 
-func devFmt(ctx context.Context, cmd *cli.Command) error {
-	if _, err := script.Exec("golangci-lint fmt ./...").Stdout(); err != nil {
+func devFmt(ctx context.Context, _ *cli.Command, cfg config.Config) error {
+	exec := cmdexec.New(cfg).WithOutput(os.Stdout, os.Stderr)
+
+	if err := exec.Run(ctx, "golangci-lint", "fmt", "./..."); err != nil {
 		return err
 	}
 
-	if err := runShfmt(ctx); err != nil {
-		return err
-	}
-
-	return nil
+	return runShfmt(ctx, exec)
 }
 
-func runShfmt(ctx context.Context) error {
-	cwd, err := os.Getwd()
+func runShfmt(ctx context.Context, exec cmdexec.Executor) error {
+	shellFiles, err := FindShellScripts(exec.Dir())
 	if err != nil {
-		return errors.Wrap(err, "failed to get working directory")
-	}
-
-	shellFiles, err := FindShellScripts(cwd)
-	if err != nil {
-		return errors.Wrap(err, "failed to find shell scripts")
+		return err
 	}
 
 	if len(shellFiles) == 0 {
@@ -38,13 +30,6 @@ func runShfmt(ctx context.Context) error {
 	}
 
 	args := append([]string{"-w"}, shellFiles...)
-	shfmtCmd := exec.CommandContext(ctx, "shfmt", args...)
-	shfmtCmd.Stdout = os.Stdout
-	shfmtCmd.Stderr = os.Stderr
 
-	if err := shfmtCmd.Run(); err != nil {
-		return errors.Wrap(err, "shfmt failed")
-	}
-
-	return nil
+	return exec.Run(ctx, "shfmt", args...)
 }

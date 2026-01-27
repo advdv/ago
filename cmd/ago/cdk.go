@@ -7,12 +7,13 @@ import (
 	"io"
 	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 
+	"github.com/advdv/ago/cmd/ago/internal/cmdexec"
+	"github.com/advdv/ago/cmd/ago/internal/config"
 	"github.com/cockroachdb/errors"
 	"github.com/urfave/cli/v3"
 )
@@ -67,7 +68,7 @@ func writeOutputf(w io.Writer, format string, args ...any) {
 	}
 }
 
-func getCDKContext(ctx context.Context, cdkDir string) (map[string]any, error) {
+func getCDKContext(cdkDir string) (map[string]any, error) {
 	cdkJSONPath := filepath.Join(cdkDir, "cdk.json")
 	cdkContextPath := filepath.Join(cdkDir, "cdk.context.json")
 
@@ -172,10 +173,12 @@ func isAssumedRoleARN(arn string) bool {
 	return strings.Contains(arn, ":assumed-role/")
 }
 
-func getCallerUsername(ctx context.Context, projectDir, qualifier string, cdkContext map[string]any) (string, error) {
-	deployerProfile := findLocalDeployerProfile(ctx, projectDir, qualifier)
+func getCallerUsername(
+	ctx context.Context, exec cmdexec.Executor, qualifier string, cdkContext map[string]any,
+) (string, error) {
+	deployerProfile := findLocalDeployerProfile(ctx, exec, qualifier)
 	if deployerProfile != "" {
-		username, err := getUsernameFromProfile(ctx, projectDir, deployerProfile)
+		username, err := getUsernameFromProfile(ctx, exec, deployerProfile)
 		if err == nil {
 			return username, nil
 		}
@@ -186,50 +189,39 @@ func getCallerUsername(ctx context.Context, projectDir, qualifier string, cdkCon
 		return "", errors.New("admin-profile not found in cdk.json")
 	}
 
-	cmd := exec.CommandContext(ctx, "mise", "exec", "--",
-		"aws", "sts", "get-caller-identity",
+	output, err := exec.MiseOutput(ctx, "aws", "sts", "get-caller-identity",
 		"--profile", profile,
 		"--query", "Arn",
 		"--output", "text",
 	)
-	cmd.Dir = projectDir
-
-	output, err := cmd.Output()
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get caller identity")
 	}
 
-	arn := strings.TrimSpace(string(output))
-
-	if isAssumedRoleARN(arn) {
+	if isAssumedRoleARN(output) {
 		return "", errAssumedRole
 	}
 
-	parts := strings.Split(arn, "/")
+	parts := strings.Split(output, "/")
 	if len(parts) < 2 {
-		return "", errors.Errorf("unexpected ARN format: %s", arn)
+		return "", errors.Errorf("unexpected ARN format: %s", output)
 	}
 
 	return parts[len(parts)-1], nil
 }
 
-func findLocalDeployerProfile(ctx context.Context, projectDir, qualifier string) string {
+func findLocalDeployerProfile(ctx context.Context, exec cmdexec.Executor, qualifier string) string {
 	if qualifier == "" {
 		return ""
 	}
 
-	cmd := exec.CommandContext(ctx, "mise", "exec", "--",
-		"aws", "configure", "list-profiles",
-	)
-	cmd.Dir = projectDir
-
-	output, err := cmd.Output()
+	output, err := exec.MiseOutput(ctx, "aws", "configure", "list-profiles")
 	if err != nil {
 		return ""
 	}
 
 	prefix := qualifier + "-"
-	for profile := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
+	for profile := range strings.SplitSeq(output, "\n") {
 		if strings.HasPrefix(profile, prefix) && profile != qualifier+"-admin" {
 			return profile
 		}
@@ -238,29 +230,23 @@ func findLocalDeployerProfile(ctx context.Context, projectDir, qualifier string)
 	return ""
 }
 
-func getUsernameFromProfile(ctx context.Context, projectDir, profile string) (string, error) {
-	cmd := exec.CommandContext(ctx, "mise", "exec", "--",
-		"aws", "sts", "get-caller-identity",
+func getUsernameFromProfile(ctx context.Context, exec cmdexec.Executor, profile string) (string, error) {
+	output, err := exec.MiseOutput(ctx, "aws", "sts", "get-caller-identity",
 		"--profile", profile,
 		"--query", "Arn",
 		"--output", "text",
 	)
-	cmd.Dir = projectDir
-
-	output, err := cmd.Output()
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get caller identity")
 	}
 
-	arn := strings.TrimSpace(string(output))
-
-	if isAssumedRoleARN(arn) {
+	if isAssumedRoleARN(output) {
 		return "", errAssumedRole
 	}
 
-	parts := strings.Split(arn, "/")
+	parts := strings.Split(output, "/")
 	if len(parts) < 2 {
-		return "", errors.Errorf("unexpected ARN format: %s", arn)
+		return "", errors.Errorf("unexpected ARN format: %s", output)
 	}
 
 	return parts[len(parts)-1], nil
@@ -273,10 +259,16 @@ func formatDeploymentsList(deployments []string) string {
 	return strings.Join(deployments, ", ")
 }
 
+type cdkCommandOptions struct {
+	Deployment string
+	All        bool
+	Hotswap    bool
+	Output     io.Writer
+}
+
 func resolveDeploymentIdent(
-	ctx context.Context,
 	opts cdkCommandOptions,
-	profile, prefix string,
+	prefix string,
 	cdkContext map[string]any,
 	username string,
 	usernameErr error,
@@ -324,25 +316,19 @@ Available deployments: %s`, deployment, username, formatDeploymentsList(deployme
 	return deployment, nil
 }
 
-func getUserGroups(
-	ctx context.Context, projectDir, profile, username string,
-) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "mise", "exec", "--",
-		"aws", "iam", "list-groups-for-user",
+func getUserGroups(ctx context.Context, exec cmdexec.Executor, profile, username string) ([]string, error) {
+	output, err := exec.MiseOutput(ctx, "aws", "iam", "list-groups-for-user",
 		"--user-name", username,
 		"--profile", profile,
 		"--query", "Groups[].GroupName",
 		"--output", "json",
 	)
-	cmd.Dir = projectDir
-
-	output, err := cmd.Output()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list groups for user")
 	}
 
 	var groups []string
-	if err := json.Unmarshal(output, &groups); err != nil {
+	if err := json.Unmarshal([]byte(output), &groups); err != nil {
 		return nil, errors.Wrap(err, "failed to parse groups")
 	}
 
@@ -365,18 +351,13 @@ func checkDeploymentPermission(deployment string, isFullDep bool) error {
 }
 
 func resolveProfile(
-	ctx context.Context, projectDir string, cdkContext map[string]any, qualifier, username string,
+	ctx context.Context, exec cmdexec.Executor, cdkContext map[string]any, qualifier, username string,
 ) string {
 	deployerProfile := qualifier + "-" + strings.ToLower(username)
 
-	cmd := exec.CommandContext(ctx, "mise", "exec", "--",
-		"aws", "configure", "list-profiles",
-	)
-	cmd.Dir = projectDir
-
-	output, err := cmd.Output()
+	output, err := exec.MiseOutput(ctx, "aws", "configure", "list-profiles")
 	if err == nil {
-		profiles := strings.Split(strings.TrimSpace(string(output)), "\n")
+		profiles := strings.Split(output, "\n")
 		if slices.Contains(profiles, deployerProfile) {
 			return deployerProfile
 		}
@@ -404,21 +385,45 @@ func buildCDKArgs(profile, qualifier, prefix string, userGroups []string) []stri
 	return args
 }
 
-func runCDKCommand(
-	ctx context.Context, projectDir, cdkDir string, output io.Writer, command string, args []string,
-) error {
-	fullArgs := make([]string, 0, 4+len(args))
-	fullArgs = append(fullArgs, "exec", "--", "cdk", command)
-	fullArgs = append(fullArgs, args...)
+func runCDKCommand(ctx context.Context, exec cmdexec.Executor, command string, args []string) error {
+	fullArgs := append([]string{command}, args...)
+	return exec.Mise(ctx, "cdk", fullArgs...)
+}
 
-	cmd := exec.CommandContext(ctx, "mise", fullArgs...)
-	cmd.Dir = cdkDir
-	cmd.Stdout = output
-	cmd.Stderr = output
+// cdkContext holds common CDK context needed by most CDK commands.
+type cdkContext struct {
+	Exec       cmdexec.Executor
+	CDKExec    cmdexec.Executor
+	CDKDir     string
+	CDKContext map[string]any
+	Prefix     string
+	Qualifier  string
+}
 
-	if err := cmd.Run(); err != nil {
-		return errors.Wrapf(err, "cdk %s failed", command)
+func loadCDKContext(cfg config.Config) (*cdkContext, error) {
+	cdkDir := filepath.Join(cfg.ProjectDir, "infra", "cdk", "cdk")
+
+	cdkCtx, err := getCDKContext(cdkDir)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil
+	prefix, err := detectPrefix(cdkCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	qualifier, ok := cdkCtx[prefix+"qualifier"].(string)
+	if !ok || qualifier == "" {
+		return nil, errors.Errorf("qualifier not found at context key %q", prefix+"qualifier")
+	}
+
+	return &cdkContext{
+		Exec:       cmdexec.New(cfg),
+		CDKExec:    cmdexec.New(cfg).InSubdir("infra/cdk/cdk"),
+		CDKDir:     cdkDir,
+		CDKContext: cdkCtx,
+		Prefix:     prefix,
+		Qualifier:  qualifier,
+	}, nil
 }

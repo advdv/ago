@@ -13,26 +13,26 @@ import (
 
 const FileName = ".ago.yml"
 
-type Config struct {
+type InnerConfig struct {
 	Version string `yaml:"version" validate:"required,oneof=1"`
 }
 
-func Default() Config {
-	return Config{
+func Default() InnerConfig {
+	return InnerConfig{
 		Version: "1",
 	}
 }
 
 type Loader interface {
-	Load(path string) (Config, error)
+	Load(path string) (InnerConfig, error)
 }
 
 type Writer interface {
-	Write(w io.Writer, cfg Config) error
+	Write(w io.Writer, cfg InnerConfig) error
 }
 
 type Finder interface {
-	Find(startDir string) (cfg Config, projectDir string, err error)
+	Find(startDir string) (cfg InnerConfig, projectDir string, err error)
 }
 
 type yamlLoader struct {
@@ -45,10 +45,10 @@ func NewLoader() Loader {
 	}
 }
 
-func (l *yamlLoader) Load(path string) (Config, error) {
+func (l *yamlLoader) Load(path string) (InnerConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return Config{}, errors.Wrap(err, "failed to read config file")
+		return InnerConfig{}, errors.Wrap(err, "failed to read config file")
 	}
 
 	dec := yaml.NewDecoder(
@@ -57,9 +57,9 @@ func (l *yamlLoader) Load(path string) (Config, error) {
 		yaml.Strict(),
 	)
 
-	var cfg Config
+	var cfg InnerConfig
 	if err := dec.Decode(&cfg); err != nil {
-		return Config{}, errors.Wrap(err, "failed to parse config file")
+		return InnerConfig{}, errors.Wrap(err, "failed to parse config file")
 	}
 
 	return cfg, nil
@@ -71,7 +71,7 @@ func NewWriter() Writer {
 	return &yamlWriter{}
 }
 
-func (w *yamlWriter) Write(wr io.Writer, cfg Config) error {
+func (w *yamlWriter) Write(wr io.Writer, cfg InnerConfig) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return errors.Wrap(err, "failed to marshal config")
@@ -92,21 +92,21 @@ func NewFinder(loader Loader) Finder {
 	return &finder{loader: loader}
 }
 
-func (f *finder) Find(startDir string) (Config, string, error) {
+func (f *finder) Find(startDir string) (InnerConfig, string, error) {
 	dir := startDir
 	for {
 		configPath := filepath.Join(dir, FileName)
 		if _, err := os.Stat(configPath); err == nil {
 			cfg, err := f.loader.Load(configPath)
 			if err != nil {
-				return Config{}, "", err
+				return InnerConfig{}, "", err
 			}
 			return cfg, dir, nil
 		}
 
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return Config{}, "", errors.Newf(
+			return InnerConfig{}, "", errors.Newf(
 				"config file %s not found (searched from %s to root)",
 				FileName, startDir,
 			)
@@ -115,7 +115,7 @@ func (f *finder) Find(startDir string) (Config, string, error) {
 	}
 }
 
-func WriteToFile(dir string, cfg Config, w Writer) error {
+func WriteToFile(dir string, cfg InnerConfig, w Writer) error {
 	path := filepath.Join(dir, FileName)
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {

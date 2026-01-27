@@ -40,8 +40,8 @@ func main() {
 				return ctx, err
 			}
 
-			return config.WithContext(ctx, config.Context{
-				Config:     cfg,
+			return config.WithContext(ctx, config.Config{
+				Inner:      cfg,
 				ProjectDir: projectDir,
 			}), nil
 		},

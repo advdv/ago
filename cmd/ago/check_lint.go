@@ -3,34 +3,26 @@ package main
 import (
 	"context"
 	"os"
-	"os/exec"
 
-	"github.com/bitfield/script"
-	"github.com/cockroachdb/errors"
+	"github.com/advdv/ago/cmd/ago/internal/cmdexec"
+	"github.com/advdv/ago/cmd/ago/internal/config"
 	"github.com/urfave/cli/v3"
 )
 
-func checkLint(ctx context.Context, cmd *cli.Command) error {
-	if _, err := script.Exec("golangci-lint run ./infra/...").Stdout(); err != nil {
+func checkLint(ctx context.Context, _ *cli.Command, cfg config.Config) error {
+	exec := cmdexec.New(cfg).WithOutput(os.Stdout, os.Stderr)
+
+	if err := exec.Run(ctx, "golangci-lint", "run", "./infra/..."); err != nil {
 		return err
 	}
 
-	if err := runShellcheck(ctx); err != nil {
-		return err
-	}
-
-	return nil
+	return runShellcheck(ctx, exec)
 }
 
-func runShellcheck(ctx context.Context) error {
-	cwd, err := os.Getwd()
+func runShellcheck(ctx context.Context, exec cmdexec.Executor) error {
+	shellFiles, err := FindShellScripts(exec.Dir())
 	if err != nil {
-		return errors.Wrap(err, "failed to get working directory")
-	}
-
-	shellFiles, err := FindShellScripts(cwd)
-	if err != nil {
-		return errors.Wrap(err, "failed to find shell scripts")
+		return err
 	}
 
 	if len(shellFiles) == 0 {
@@ -38,13 +30,6 @@ func runShellcheck(ctx context.Context) error {
 	}
 
 	args := append([]string{}, shellFiles...)
-	shellCmd := exec.CommandContext(ctx, "shellcheck", args...)
-	shellCmd.Stdout = os.Stdout
-	shellCmd.Stderr = os.Stderr
 
-	if err := shellCmd.Run(); err != nil {
-		return errors.Wrap(err, "shellcheck failed")
-	}
-
-	return nil
+	return exec.Run(ctx, "shellcheck", args...)
 }

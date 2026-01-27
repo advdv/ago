@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
 
+	"github.com/advdv/ago/cmd/ago/internal/config"
 	"github.com/cockroachdb/errors"
 	"github.com/urfave/cli/v3"
 )
@@ -15,56 +17,43 @@ func removeDeployerCmd() *cli.Command {
 		Name:      "remove-deployer",
 		Usage:     "Remove a deployer user from the project configuration",
 		ArgsUsage: "<username>",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:  "project-dir",
-				Usage: "Project directory (defaults to current directory)",
-			},
-		},
-		Action: runRemoveDeployer,
+		Action:    config.WithConfig(runRemoveDeployer),
 	}
 }
 
-func runRemoveDeployer(ctx context.Context, cmd *cli.Command) error {
+type removeDeployerOptions struct {
+	Username string
+	Output   io.Writer
+}
+
+func runRemoveDeployer(ctx context.Context, cmd *cli.Command, cfg config.Config) error {
 	username := cmd.Args().First()
 	if username == "" {
 		return errors.New("username argument is required")
 	}
 
-	projectDir := cmd.String("project-dir")
-	if projectDir == "" {
-		var err error
-		projectDir, err = os.Getwd()
-		if err != nil {
-			return errors.Wrap(err, "failed to get current working directory")
-		}
-	}
-
-	opts := deployerOptions{
-		ProjectDir: projectDir,
-		Username:   username,
-		Output:     os.Stdout,
-	}
-
-	return doRemoveDeployer(ctx, opts)
+	return doRemoveDeployer(ctx, cfg, removeDeployerOptions{
+		Username: username,
+		Output:   os.Stdout,
+	})
 }
 
-func doRemoveDeployer(ctx context.Context, opts deployerOptions) error {
-	cdkDir := filepath.Join(opts.ProjectDir, "infra", "cdk", "cdk")
+func doRemoveDeployer(_ context.Context, cfg config.Config, opts removeDeployerOptions) error {
+	cdkDir := filepath.Join(cfg.ProjectDir, "infra", "cdk", "cdk")
 	contextPath := filepath.Join(cdkDir, "cdk.context.json")
 
-	cdkContext, err := getCDKContext(ctx, cdkDir)
+	cdkCtx, err := getCDKContext(cdkDir)
 	if err != nil {
 		return err
 	}
 
-	prefix, err := detectPrefix(cdkContext)
+	prefix, err := detectPrefix(cdkCtx)
 	if err != nil {
 		return err
 	}
 
-	deployers := extractStringSlice(cdkContext, prefix+"deployers")
-	devDeployers := extractStringSlice(cdkContext, prefix+"dev-deployers")
+	deployers := extractStringSlice(cdkCtx, prefix+"deployers")
+	devDeployers := extractStringSlice(cdkCtx, prefix+"dev-deployers")
 
 	foundInDeployers := slices.Contains(deployers, opts.Username)
 	foundInDevDeployers := slices.Contains(devDeployers, opts.Username)
@@ -90,7 +79,7 @@ func doRemoveDeployer(ctx context.Context, opts deployerOptions) error {
 	}
 
 	deploymentIdent := "Dev" + opts.Username
-	deployments := extractStringSlice(cdkContext, prefix+"deployments")
+	deployments := extractStringSlice(cdkCtx, prefix+"deployments")
 	if slices.Contains(deployments, deploymentIdent) {
 		deployments = slices.DeleteFunc(deployments, func(s string) bool { return s == deploymentIdent })
 		contextJSON[prefix+"deployments"] = deployments
