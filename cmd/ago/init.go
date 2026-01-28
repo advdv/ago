@@ -26,6 +26,7 @@ granted = "{{.GrantedVersion}}"
 golangci-lint = "{{.GolangciLintVersion}}"
 shellcheck = "{{.ShellcheckVersion}}"
 shfmt = "{{.ShfmtVersion}}"
+ko = "{{.KoVersion}}"
 "github:advdv/ago" = "{{.AgoVersion}}"
 `))
 
@@ -149,6 +150,42 @@ go.work.sum
 # Editor/IDE
 .idea
 .DS_Store
+`))
+
+var backendKoYamlTemplate = template.Must(template.New(".ko.yaml").Parse(`defaultBaseImage: cgr.dev/chainguard/static:latest
+`))
+
+var backendCoreAPIMainTemplate = template.Must(template.New("main.go").Parse(`package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+)
+
+func main() {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Hello, World!")
+	})
+
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "ok")
+	})
+
+	log.Printf("Starting server on :%s", port)
+
+	//nolint:gosec // G114: timeouts configured at infrastructure level
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatalf("Server failed: %v", err)
+	}
+}
 `))
 
 var golangciLintTemplate = template.Must(template.New(".golangci.yml").Parse(`version: "2"
@@ -354,6 +391,7 @@ type MiseConfig struct {
 	GolangciLintVersion string
 	ShellcheckVersion   string
 	ShfmtVersion        string
+	KoVersion           string
 	AgoVersion          string
 }
 
@@ -368,6 +406,7 @@ func DefaultMiseConfig() MiseConfig {
 		GolangciLintVersion: "latest",
 		ShellcheckVersion:   "latest",
 		ShfmtVersion:        "latest",
+		KoVersion:           "latest",
 		AgoVersion:          "latest",
 	}
 }
@@ -811,6 +850,33 @@ func setupBackendProject(ctx context.Context, exec cmdexec.Executor, dir string,
 		return errors.Wrap(err, "failed to write backend .golangci.yml")
 	}
 
+	var koYamlBuf bytes.Buffer
+	if err := backendKoYamlTemplate.Execute(&koYamlBuf, nil); err != nil {
+		return errors.Wrap(err, "failed to execute backend .ko.yaml template")
+	}
+
+	koYamlPath := filepath.Join(backendDir, ".ko.yaml")
+	//nolint:gosec // config file needs to be readable
+	if err := os.WriteFile(koYamlPath, koYamlBuf.Bytes(), 0o644); err != nil {
+		return errors.Wrap(err, "failed to write backend .ko.yaml")
+	}
+
+	coreAPIDir := filepath.Join(backendDir, "cmd", "coreapi")
+	if err := os.MkdirAll(coreAPIDir, 0o755); err != nil {
+		return errors.Wrap(err, "failed to create backend cmd/coreapi directory")
+	}
+
+	var mainBuf bytes.Buffer
+	if err := backendCoreAPIMainTemplate.Execute(&mainBuf, nil); err != nil {
+		return errors.Wrap(err, "failed to execute backend main.go template")
+	}
+
+	mainPath := filepath.Join(coreAPIDir, "main.go")
+	//nolint:gosec // source file needs to be readable
+	if err := os.WriteFile(mainPath, mainBuf.Bytes(), 0o644); err != nil {
+		return errors.Wrap(err, "failed to write backend main.go")
+	}
+
 	backendExec := exec.InSubdir("backend")
 	if err := backendExec.Run(ctx, "go", "mod", "tidy"); err != nil {
 		return errors.Wrap(err, "backend go mod tidy failed")
@@ -821,7 +887,6 @@ func setupBackendProject(ctx context.Context, exec cmdexec.Executor, dir string,
 
 var defaultSkills = []string{
 	"solid-principles",
-	"setting-up-cdk-app",
 }
 
 func installAmpSkills(ctx context.Context, exec cmdexec.Executor) error {

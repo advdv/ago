@@ -17,6 +17,7 @@ func main() {
 		Usage:   "Development task runner for the ago project",
 		Version: Version,
 		Commands: []*cli.Command{
+			backendCmd(),
 			infraCmd(),
 			checkCmd(),
 			devCmd(),
