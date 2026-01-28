@@ -8,3 +8,14 @@ type Result struct {
 	InitialDeployer   string
 	TerraformCloudOrg string
 }
+
+func DefaultResult(defaultIdent string) Result {
+	return Result{
+		ProjectIdent:      defaultIdent,
+		PrimaryRegion:     "eu-central-1",
+		SecondaryRegions:  []string{"eu-north-1"},
+		ManagementProfile: "crewlinker-management-account",
+		InitialDeployer:   "Adam",
+		TerraformCloudOrg: "basewarp",
+	}
+}

@@ -17,10 +17,11 @@ func NewFormBuilder() FormBuilder {
 }
 
 func (b *formBuilder) Build(defaultIdent string, result *Result) *huh.Form {
+	*result = DefaultResult(defaultIdent)
 	return huh.NewForm(
 		huh.NewGroup(
 			b.managementProfileInput(&result.ManagementProfile),
-			b.projectIdentInput(defaultIdent, &result.ProjectIdent),
+			b.projectIdentInput(&result.ProjectIdent),
 			b.primaryRegionSelect(&result.PrimaryRegion),
 			b.secondaryRegionsSelect(&result.PrimaryRegion, &result.SecondaryRegions),
 			b.initialDeployerInput(&result.InitialDeployer),
@@ -29,8 +30,7 @@ func (b *formBuilder) Build(defaultIdent string, result *Result) *huh.Form {
 	)
 }
 
-func (b *formBuilder) projectIdentInput(defaultIdent string, value *string) *huh.Input {
-	*value = defaultIdent
+func (b *formBuilder) projectIdentInput(value *string) *huh.Input {
 	return huh.NewInput().
 		Title("Project identifier").
 		Description("Used as prefix for AWS resources and stack names").
@@ -39,7 +39,6 @@ func (b *formBuilder) projectIdentInput(defaultIdent string, value *string) *huh
 }
 
 func (b *formBuilder) primaryRegionSelect(value *string) *huh.Select[string] {
-	*value = "eu-central-1"
 	regions := agcdkutil.AllKnownRegions()
 	return huh.NewSelect[string]().
 		Title("Primary AWS region").
@@ -49,7 +48,6 @@ func (b *formBuilder) primaryRegionSelect(value *string) *huh.Select[string] {
 }
 
 func (b *formBuilder) secondaryRegionsSelect(primaryRegion *string, value *[]string) *huh.MultiSelect[string] {
-	*value = []string{"eu-north-1"}
 	return huh.NewMultiSelect[string]().
 		Title("Secondary AWS regions").
 		Description("Additional regions for multi-region deployments (optional)").
@@ -66,7 +64,6 @@ func (b *formBuilder) secondaryRegionsSelect(primaryRegion *string, value *[]str
 }
 
 func (b *formBuilder) managementProfileInput(value *string) *huh.Input {
-	*value = "crewlinker-management-account"
 	return huh.NewInput().
 		Title("Management profile").
 		Description("AWS profile for the management account (used to create project account)").
@@ -74,7 +71,6 @@ func (b *formBuilder) managementProfileInput(value *string) *huh.Input {
 }
 
 func (b *formBuilder) initialDeployerInput(value *string) *huh.Input {
-	*value = "Adam"
 	return huh.NewInput().
 		Title("Initial deployer").
 		Description("Username for the first deployer to add to the project").
@@ -82,7 +78,6 @@ func (b *formBuilder) initialDeployerInput(value *string) *huh.Input {
 }
 
 func (b *formBuilder) terraformCloudOrgInput(value *string) *huh.Input {
-	*value = "basewarp"
 	return huh.NewInput().
 		Title("Terraform Cloud organization").
 		Description("Organization name in Terraform Cloud for remote state management").

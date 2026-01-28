@@ -416,7 +416,14 @@ func initCmd() *cli.Command {
 		Name:      "init",
 		Usage:     "Initialize a new ago project",
 		ArgsUsage: "[directory]",
-		Action:    runInit,
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:    "yes",
+				Aliases: []string{"y"},
+				Usage:   "Accept all defaults without prompting",
+			},
+		},
+		Action: runInit,
 	}
 }
 
@@ -437,10 +444,17 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 	dir = absDir
 
 	defaultIdent := filepath.Base(dir)
-	wizard := initwizard.New(initwizard.NewFormBuilder(), initwizard.NewInteractiveRunner())
-	result, err := wizard.Run(defaultIdent)
-	if err != nil {
-		return errors.Wrap(err, "wizard failed")
+
+	var result initwizard.Result
+	if cmd.Bool("yes") {
+		result = initwizard.DefaultResult(defaultIdent)
+	} else {
+		wizard := initwizard.New(initwizard.NewFormBuilder(), initwizard.NewInteractiveRunner())
+		var err error
+		result, err = wizard.Run(defaultIdent)
+		if err != nil {
+			return errors.Wrap(err, "wizard failed")
+		}
 	}
 
 	cdkConfig := DefaultCDKConfigFromDir(dir)
