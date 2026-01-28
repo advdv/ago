@@ -12,7 +12,7 @@ import (
 func devFmt(ctx context.Context, _ *cli.Command, cfg config.Config) error {
 	exec := cmdexec.New(cfg).WithOutput(os.Stdout, os.Stderr)
 
-	if err := exec.Run(ctx, "golangci-lint", "fmt", "./..."); err != nil {
+	if err := runInGoModules(ctx, exec, "golangci-lint", "fmt", "./..."); err != nil {
 		return err
 	}
 

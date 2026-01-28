@@ -121,6 +121,36 @@ var tfMainTemplate = template.Must(template.New("main.tf").Parse(`terraform {
 # Add your providers and resources below
 `))
 
+var backendGoModTemplate = template.Must(template.New("go.mod").Parse(`module {{.ModuleName}}/backend
+
+go {{.GoVersion}}
+`))
+
+var backendGitignoreTemplate = template.Must(template.New(".gitignore").Parse(`# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+
+# Coverage
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Go workspace
+go.work
+go.work.sum
+
+# Environment
+.env
+
+# Editor/IDE
+.idea
+.DS_Store
+`))
+
 var golangciLintTemplate = template.Must(template.New(".golangci.yml").Parse(`version: "2"
 linters:
   default: all
@@ -270,6 +300,11 @@ type TFConfig struct {
 	ProjectIdent      string
 }
 
+type BackendConfig struct {
+	ModuleName string
+	GoVersion  string
+}
+
 func DefaultCDKConfigFromDir(dir string) CDKConfig {
 	name := filepath.Base(dir)
 	return CDKConfig{
@@ -281,6 +316,14 @@ func DefaultCDKConfigFromDir(dir string) CDKConfig {
 		Deployments:      []string{"Prod", "Stag", "Dev1", "Dev2", "Dev3"},
 		EmailPattern:     "admin+{project}@example.com",
 		Services:         DefaultServices(),
+	}
+}
+
+func DefaultBackendConfigFromDir(dir string) BackendConfig {
+	name := filepath.Base(dir)
+	return BackendConfig{
+		ModuleName: "github.com/example/" + name,
+		GoVersion:  "1.25",
 	}
 }
 
@@ -372,11 +415,14 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 		ProjectIdent:      result.ProjectIdent,
 	}
 
+	backendConfig := DefaultBackendConfigFromDir(dir)
+
 	return doInit(ctx, InitOptions{
 		Dir:               dir,
 		MiseConfig:        DefaultMiseConfig(),
 		CDKConfig:         cdkConfig,
 		TFConfig:          tfConfig,
+		BackendConfig:     backendConfig,
 		RunInstall:        true,
 		ManagementProfile: result.ManagementProfile,
 		Region:            result.PrimaryRegion,
@@ -389,6 +435,7 @@ type InitOptions struct {
 	MiseConfig          MiseConfig
 	CDKConfig           CDKConfig
 	TFConfig            TFConfig
+	BackendConfig       BackendConfig
 	RunInstall          bool
 	ManagementProfile   string
 	Region              string
@@ -447,6 +494,10 @@ func doInit(ctx context.Context, opts InitOptions) error {
 	}
 
 	if err := setupTFProject(opts.Dir, opts.TFConfig); err != nil {
+		return err
+	}
+
+	if err := setupBackendProject(ctx, exec, opts.Dir, opts.BackendConfig); err != nil {
 		return err
 	}
 
@@ -722,6 +773,47 @@ func setupTFProject(dir string, cfg TFConfig) error {
 	//nolint:gosec // source file needs to be readable
 	if err := os.WriteFile(mainPath, mainBuf.Bytes(), 0o644); err != nil {
 		return errors.Wrap(err, "failed to write tf main.tf")
+	}
+
+	return nil
+}
+
+func setupBackendProject(ctx context.Context, exec cmdexec.Executor, dir string, cfg BackendConfig) error {
+	backendDir := filepath.Join(dir, "backend")
+
+	if err := os.MkdirAll(backendDir, 0o755); err != nil {
+		return errors.Wrap(err, "failed to create backend directory")
+	}
+
+	var goModBuf bytes.Buffer
+	if err := backendGoModTemplate.Execute(&goModBuf, cfg); err != nil {
+		return errors.Wrap(err, "failed to execute backend go.mod template")
+	}
+
+	goModPath := filepath.Join(backendDir, "go.mod")
+	//nolint:gosec // config file needs to be readable
+	if err := os.WriteFile(goModPath, goModBuf.Bytes(), 0o644); err != nil {
+		return errors.Wrap(err, "failed to write backend go.mod")
+	}
+
+	var gitignoreBuf bytes.Buffer
+	if err := backendGitignoreTemplate.Execute(&gitignoreBuf, nil); err != nil {
+		return errors.Wrap(err, "failed to execute backend .gitignore template")
+	}
+
+	gitignorePath := filepath.Join(backendDir, ".gitignore")
+	//nolint:gosec // config file needs to be readable
+	if err := os.WriteFile(gitignorePath, gitignoreBuf.Bytes(), 0o644); err != nil {
+		return errors.Wrap(err, "failed to write backend .gitignore")
+	}
+
+	if err := writeGolangciLintConfig(backendDir); err != nil {
+		return errors.Wrap(err, "failed to write backend .golangci.yml")
+	}
+
+	backendExec := exec.InSubdir("backend")
+	if err := backendExec.Run(ctx, "go", "mod", "tidy"); err != nil {
+		return errors.Wrap(err, "backend go mod tidy failed")
 	}
 
 	return nil
