@@ -24,6 +24,7 @@ func (b *formBuilder) Build(defaultIdent string, result *Result) *huh.Form {
 			b.primaryRegionSelect(&result.PrimaryRegion),
 			b.secondaryRegionsSelect(&result.PrimaryRegion, &result.SecondaryRegions),
 			b.initialDeployerInput(&result.InitialDeployer),
+			b.terraformCloudOrgInput(&result.TerraformCloudOrg),
 		),
 	)
 }
@@ -77,6 +78,14 @@ func (b *formBuilder) initialDeployerInput(value *string) *huh.Input {
 	return huh.NewInput().
 		Title("Initial deployer").
 		Description("Username for the first deployer to add to the project").
+		Value(value)
+}
+
+func (b *formBuilder) terraformCloudOrgInput(value *string) *huh.Input {
+	*value = "basewarp"
+	return huh.NewInput().
+		Title("Terraform Cloud organization").
+		Description("Organization name in Terraform Cloud for remote state management").
 		Value(value)
 }
 

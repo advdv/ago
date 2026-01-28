@@ -80,6 +80,47 @@ func NewDeployment(stack awscdk.Stack, shared *Shared, deploymentIdent string) {
 }
 `))
 
+var tfGitignoreTemplate = template.Must(template.New(".gitignore").Parse(`# Local .terraform directories
+**/.terraform/*
+
+# .tfstate files
+*.tfstate
+*.tfstate.*
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Exclude all .tfvars files, which are likely to contain sensitive data
+*.tfvars
+*.tfvars.json
+
+# Ignore override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ignore CLI configuration files
+.terraformrc
+terraform.rc
+
+# Ignore lock info files
+.terraform.tfstate.lock.info
+`))
+
+var tfMainTemplate = template.Must(template.New("main.tf").Parse(`terraform {
+  cloud {
+    organization = "{{.TerraformCloudOrg}}"
+    workspaces {
+      name = "{{.ProjectIdent}}"
+    }
+  }
+}
+
+# Add your providers and resources below
+`))
+
 var golangciLintTemplate = template.Must(template.New(".golangci.yml").Parse(`version: "2"
 linters:
   default: all
@@ -224,6 +265,11 @@ type CDKConfig struct {
 	Services         []string
 }
 
+type TFConfig struct {
+	TerraformCloudOrg string
+	ProjectIdent      string
+}
+
 func DefaultCDKConfigFromDir(dir string) CDKConfig {
 	name := filepath.Base(dir)
 	return CDKConfig{
@@ -321,10 +367,16 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 	cdkConfig.PrimaryRegion = result.PrimaryRegion
 	cdkConfig.SecondaryRegions = result.SecondaryRegions
 
+	tfConfig := TFConfig{
+		TerraformCloudOrg: result.TerraformCloudOrg,
+		ProjectIdent:      result.ProjectIdent,
+	}
+
 	return doInit(ctx, InitOptions{
 		Dir:               dir,
 		MiseConfig:        DefaultMiseConfig(),
 		CDKConfig:         cdkConfig,
+		TFConfig:          tfConfig,
 		RunInstall:        true,
 		ManagementProfile: result.ManagementProfile,
 		Region:            result.PrimaryRegion,
@@ -336,6 +388,7 @@ type InitOptions struct {
 	Dir                 string
 	MiseConfig          MiseConfig
 	CDKConfig           CDKConfig
+	TFConfig            TFConfig
 	RunInstall          bool
 	ManagementProfile   string
 	Region              string
@@ -390,6 +443,10 @@ func doInit(ctx context.Context, opts InitOptions) error {
 	}
 
 	if err := configureCDKProject(ctx, exec, opts.Dir, opts.CDKConfig); err != nil {
+		return err
+	}
+
+	if err := setupTFProject(opts.Dir, opts.TFConfig); err != nil {
 		return err
 	}
 
@@ -633,6 +690,38 @@ func setupCDKProject(ctx context.Context, exec cmdexec.Executor, dir string) err
 	readmePath := filepath.Join(cdkDir, "README.md")
 	if err := os.Remove(readmePath); err != nil && !os.IsNotExist(err) {
 		return errors.Wrap(err, "failed to remove README.md")
+	}
+
+	return nil
+}
+
+func setupTFProject(dir string, cfg TFConfig) error {
+	tfDir := filepath.Join(dir, "infra", "tf")
+
+	if err := os.MkdirAll(tfDir, 0o755); err != nil {
+		return errors.Wrap(err, "failed to create tf directory")
+	}
+
+	var gitignoreBuf bytes.Buffer
+	if err := tfGitignoreTemplate.Execute(&gitignoreBuf, nil); err != nil {
+		return errors.Wrap(err, "failed to execute tf .gitignore template")
+	}
+
+	gitignorePath := filepath.Join(tfDir, ".gitignore")
+	//nolint:gosec // config file needs to be readable
+	if err := os.WriteFile(gitignorePath, gitignoreBuf.Bytes(), 0o644); err != nil {
+		return errors.Wrap(err, "failed to write tf .gitignore")
+	}
+
+	var mainBuf bytes.Buffer
+	if err := tfMainTemplate.Execute(&mainBuf, cfg); err != nil {
+		return errors.Wrap(err, "failed to execute tf main.tf template")
+	}
+
+	mainPath := filepath.Join(tfDir, "main.tf")
+	//nolint:gosec // source file needs to be readable
+	if err := os.WriteFile(mainPath, mainBuf.Bytes(), 0o644); err != nil {
+		return errors.Wrap(err, "failed to write tf main.tf")
 	}
 
 	return nil

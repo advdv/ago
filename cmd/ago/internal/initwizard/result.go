@@ -6,4 +6,5 @@ type Result struct {
 	SecondaryRegions  []string
 	ManagementProfile string
 	InitialDeployer   string
+	TerraformCloudOrg string
 }

@@ -10,6 +10,7 @@ func infraCmd() *cli.Command {
 			createAWSAccountCmd(),
 			destroyAWSAccountCmd(),
 			cdkCmd(),
+			tfCmd(),
 		},
 	}
 }
