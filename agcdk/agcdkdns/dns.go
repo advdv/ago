@@ -67,7 +67,7 @@ func New(scope constructs.Construct, props Props) DNS {
 		agcdkparams.Store(scope, "HostedZoneIDParam", paramsNamespace, "hosted-zone-id",
 			hostedZone.HostedZoneId())
 
-		awscdk.NewCfnOutput(scope, jsii.String(NameServersOutputKey), &awscdk.CfnOutputProps{
+		awscdk.NewCfnOutput(awscdk.Stack_Of(scope), jsii.String(NameServersOutputKey), &awscdk.CfnOutputProps{
 			Value:       awscdk.Fn_Join(jsii.String(","), hostedZone.HostedZoneNameServers()),
 			Description: jsii.String("Comma-separated list of NS records for DNS delegation"),
 		})
