@@ -12,9 +12,9 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func dnsUndelegateCmd() *cli.Command {
+func orgDNSUndelegateCmd() *cli.Command {
 	return &cli.Command{
-		Name:  "undelegate",
+		Name:  "dns-undelegate",
 		Usage: "Remove DNS delegation from parent zone",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -171,24 +171,15 @@ func printDNSDelegatedWarning(output io.Writer, prefix string) {
                               IMPORTANT NOTICE
 ================================================================================
 
-The 'dns-delegated' flag in cdk.context.json has NOT been set to false.
+The '%sdns-delegated' flag in cdk.context.json has NOT been changed.
 
-This is intentional. Here's what this means for CDK deployments:
+WARNING: If you manually set this flag to false and then run 'cdk deploy',
+CDK will DESTROY resources that depend on DNS validation (certificates,
+API Gateway custom domains, CloudFront distributions, etc.).
 
-  1. CDK will still attempt to create resources that depend on DNS validation
-     (e.g., ACM certificates with DNS validation).
+Only set the flag to false if you understand and accept these consequences.
 
-  2. These deployments will FAIL because the DNS delegation no longer exists
-     and DNS validation cannot complete.
-
-  3. To fix this, either:
-     - Run 'ago infra dns delegate' again to restore delegation
-     - Manually set '%sdns-delegated' to false in cdk.context.json
-
-  4. If you set the flag to false manually:
-     - CDK will skip creating DNS-dependent resources
-     - You'll need to run 'ago infra dns delegate' before deploying
-       resources that require DNS validation
+To restore DNS delegation, run: ago org dns-delegate
 
 ================================================================================
 `, prefix)

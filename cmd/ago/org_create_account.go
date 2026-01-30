@@ -13,9 +13,9 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func createAWSAccountCmd() *cli.Command {
+func orgCreateAccountCmd() *cli.Command {
 	return &cli.Command{
-		Name:  "create-aws-account",
+		Name:  "create-account",
 		Usage: "Create a new AWS account in the organization for a project",
 		Flags: []cli.Flag{
 			&cli.StringFlag{

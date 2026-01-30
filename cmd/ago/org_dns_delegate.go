@@ -17,9 +17,9 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-func dnsDelegateCmd() *cli.Command {
+func orgDNSDelegateCmd() *cli.Command {
 	return &cli.Command{
-		Name:  "delegate",
+		Name:  "dns-delegate",
 		Usage: "Set up DNS delegation from parent zone to project hosted zone",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -423,11 +423,6 @@ func waitForDNSPropagation(
 	}
 }
 
-// lookupNSWithRetry wraps resolver.LookupNS with retries to work around intermittent failures
-// caused by Tailscale's MagicDNS (and possibly other VPN/DNS interception software). When
-// Tailscale is active, Go's resolver intermittently returns "no such host" errors (~25% failure
-// rate) even when using a custom Dial function pointing to 8.8.8.8. The issue disappears when
-// Tailscale is disabled. Retrying resolves the problem without requiring users to disable their VPN.
 func lookupNSWithRetry(ctx context.Context, resolver *net.Resolver, domain string) ([]*net.NS, error) {
 	var lastErr error
 	for range dnsLookupRetries {

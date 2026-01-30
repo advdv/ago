@@ -12,11 +12,9 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// removeAWSProfile and removeProfileFromFile are defined in infra_cdk_bootstrap.go
-
-func destroyAWSAccountCmd() *cli.Command {
+func orgDestroyAccountCmd() *cli.Command {
 	return &cli.Command{
-		Name:  "destroy-aws-account",
+		Name:  "destroy-account",
 		Usage: "Close and remove an AWS account from the organization",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -66,6 +64,15 @@ func doDestroyProjectAccount(ctx context.Context, cfg config.Config, opts destro
 	if opts.ConfirmName != opts.ProjectName {
 		return errors.Errorf(
 			"confirmation name %q does not match project name %q", opts.ConfirmName, opts.ProjectName)
+	}
+
+	if err := doDNSUndelegate(ctx, cfg, dnsUndelegateOptions{
+		Region:            opts.Region,
+		ManagementProfile: opts.ManagementProfile,
+		Confirm:           opts.ProjectName,
+		Output:            opts.Output,
+	}); err != nil {
+		return errors.Wrap(err, "failed to remove DNS delegation")
 	}
 
 	exec := cmdexec.New(cfg).WithOutput(opts.Output, opts.Output)

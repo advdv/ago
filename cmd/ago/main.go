@@ -19,6 +19,7 @@ func main() {
 		Commands: []*cli.Command{
 			backendCmd(),
 			infraCmd(),
+			orgCmd(),
 			checkCmd(),
 			devCmd(),
 			initCmd(),
