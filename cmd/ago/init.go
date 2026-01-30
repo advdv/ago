@@ -172,7 +172,8 @@ go.work.sum
 .DS_Store
 `))
 
-var backendKoYamlTemplate = template.Must(template.New(".ko.yaml").Parse(`defaultBaseImage: cgr.dev/chainguard/static:latest
+var backendKoYamlTemplate = template.Must(template.New(".ko.yaml").Parse(
+	`defaultBaseImage: cgr.dev/chainguard/static:latest
 `))
 
 var backendCoreAPIMainTemplate = template.Must(template.New("main.go").Parse(`package main

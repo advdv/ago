@@ -73,11 +73,11 @@ func SharedBaseValidated(scope constructs.Construct) bool {
 // Config holds all CDK context values validated upfront.
 // It centralizes context reading and validation to provide clear error messages.
 type Config struct {
-	Prefix           string   `validate:"required"`
-	Qualifier        string   `validate:"required,max=10"`
-	PrimaryRegion    string   `validate:"required"`
-	SecondaryRegions []string `validate:"dive,required"`
-	Deployments      []string `validate:"required,dive,required"`
+	Prefix              string   `validate:"required"`
+	Qualifier           string   `validate:"required,max=10"`
+	PrimaryRegion       string   `validate:"required"`
+	SecondaryRegions    []string `validate:"dive,required"`
+	Deployments         []string `validate:"required,dive,required"`
 	DeployerGroups      []string // nil during bootstrap, optional
 	BaseDomainName      string   `validate:"required,fqdn"`
 	SharedBaseValidated bool     // true when foundational infrastructure is validated (DNS delegated, etc.)

@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"strings"
 
+	"github.com/advdv/ago/agcdkutil"
 	"github.com/advdv/ago/cmd/ago/internal/cmdexec"
 	"github.com/advdv/ago/cmd/ago/internal/config"
 	"github.com/cockroachdb/errors"
@@ -183,16 +183,9 @@ func deriveSharedStackName(cdkCtx *cdkContextData, region string) (string, error
 		return "", err
 	}
 
-	regionIdent := regionToIdent(region)
-	return fmt.Sprintf("%s-Shared-%s", qualifier, regionIdent), nil
-}
+	regionIdent := agcdkutil.RegionIdentFor(region)
 
-func regionToIdent(region string) string {
-	parts := strings.Split(region, "-")
-	if len(parts) < 3 {
-		return strings.ToUpper(strings.ReplaceAll(region, "-", ""))
-	}
-	return strings.ToUpper(parts[0][:2] + parts[1][:1] + parts[2])
+	return agcdkutil.SharedStackName(qualifier, regionIdent), nil
 }
 
 func getCDKProfile(cfg config.Config) (string, error) {
