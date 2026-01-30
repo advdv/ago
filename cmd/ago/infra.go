@@ -9,6 +9,7 @@ func infraCmd() *cli.Command {
 		Commands: []*cli.Command{
 			cdkCmd(),
 			tfCmd(),
+			orgCmd(),
 		},
 	}
 }
