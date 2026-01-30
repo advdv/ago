@@ -8,6 +8,7 @@ func dnsCmd() *cli.Command {
 		Usage: "DNS management commands",
 		Commands: []*cli.Command{
 			dnsDelegateCmd(),
+			dnsUndelegateCmd(),
 		},
 	}
 }
