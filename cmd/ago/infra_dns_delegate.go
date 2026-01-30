@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"os"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/advdv/ago/agcdkutil"
 	"github.com/advdv/ago/cmd/ago/internal/cmdexec"
@@ -35,26 +38,33 @@ func dnsDelegateCmd() *cli.Command {
 				Name:  "management-profile",
 				Usage: "AWS profile for the management account (defaults to context management-profile)",
 			},
+			&cli.DurationFlag{
+				Name:  "verification-timeout",
+				Usage: "Timeout for DNS propagation verification",
+				Value: time.Hour,
+			},
 		},
 		Action: config.RunWithConfig(runDNSDelegate),
 	}
 }
 
 type dnsDelegateOptions struct {
-	StackName         string
-	Profile           string
-	Region            string
-	ManagementProfile string
-	Output            io.Writer
+	StackName           string
+	Profile             string
+	Region              string
+	ManagementProfile   string
+	VerificationTimeout time.Duration
+	Output              io.Writer
 }
 
 func runDNSDelegate(ctx context.Context, cmd *cli.Command, cfg config.Config) error {
 	return doDNSDelegate(ctx, cfg, dnsDelegateOptions{
-		StackName:         cmd.String("stack-name"),
-		Profile:           cmd.String("profile"),
-		Region:            cmd.String("region"),
-		ManagementProfile: cmd.String("management-profile"),
-		Output:            os.Stdout,
+		StackName:           cmd.String("stack-name"),
+		Profile:             cmd.String("profile"),
+		Region:              cmd.String("region"),
+		ManagementProfile:   cmd.String("management-profile"),
+		VerificationTimeout: cmd.Duration("verification-timeout"),
+		Output:              os.Stdout,
 	})
 }
 
@@ -149,6 +159,12 @@ func doDNSDelegate(ctx context.Context, cfg config.Config, opts dnsDelegateOptio
 		"--no-fail-on-empty-changeset",
 	); err != nil {
 		return errors.Wrap(err, "failed to deploy NS delegation stack")
+	}
+
+	writeOutputf(opts.Output, "\nStack deployed. Waiting for DNS propagation...\n")
+
+	if err := waitForDNSPropagation(ctx, opts.Output, baseDomainName, nsList, opts.VerificationTimeout); err != nil {
+		return err
 	}
 
 	writeOutputf(opts.Output, "\nDNS delegation complete!\n")
@@ -321,4 +337,73 @@ func lookupParentZoneID(
 	return "", errors.Errorf(
 		"no public hosted zone found for %q in management account (profile: %s)",
 		parentDomain, managementProfile)
+}
+
+const (
+	dnsPollingInterval = 10 * time.Second
+	dnsQueryTimeout    = 5 * time.Second
+	publicDNSServer    = "8.8.8.8:53"
+)
+
+func waitForDNSPropagation(
+	ctx context.Context, output io.Writer, baseDomainName string, expectedNS []string, timeout time.Duration,
+) error {
+	deadline := time.Now().Add(timeout)
+
+	resolver := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			d := net.Dialer{Timeout: dnsQueryTimeout}
+			return d.DialContext(ctx, "udp", publicDNSServer)
+		},
+	}
+
+	expectedSet := make(map[string]bool, len(expectedNS))
+	for _, ns := range expectedNS {
+		normalized := strings.TrimSuffix(strings.ToLower(ns), ".") + "."
+		expectedSet[normalized] = true
+	}
+
+	for {
+		if time.Now().After(deadline) {
+			return errors.Errorf("DNS propagation timeout after %v", timeout)
+		}
+
+		nsRecords, err := resolver.LookupNS(ctx, baseDomainName)
+		if err == nil && nsRecordsMatch(nsRecords, expectedSet) {
+			writeOutputf(output, "\nDNS records verified via %s\n", publicDNSServer)
+			return nil
+		}
+
+		if err != nil {
+			writeOutputf(output, ".")
+		} else {
+			writeOutputf(output, "o")
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(dnsPollingInterval):
+		}
+	}
+}
+
+func nsRecordsMatch(records []*net.NS, expected map[string]bool) bool {
+	if len(records) == 0 {
+		return false
+	}
+
+	found := make([]string, 0, len(records))
+	for _, r := range records {
+		normalized := strings.ToLower(r.Host)
+		found = append(found, normalized)
+	}
+
+	for ns := range expected {
+		if !slices.Contains(found, ns) {
+			return false
+		}
+	}
+	return true
 }
