@@ -60,14 +60,28 @@ func main() {
 var cdkSharedTemplate = template.Must(template.New("shared.go").Parse(`package cdk
 
 import (
+	"github.com/advdv/ago/agcdk/agcdksharedbase"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 )
 
 type Shared struct {
+	Base agcdksharedbase.SharedBase
 }
 
 func NewShared(stack awscdk.Stack) *Shared {
-	return &Shared{}
+	shared := &Shared{}
+	shared.Base = agcdksharedbase.New(stack, agcdksharedbase.Props{})
+
+	if !shared.Base.IsValidated() {
+		// Shared base not yet validated - only foundational resources created.
+		// Deploy this first, complete validation steps (e.g., DNS delegation),
+		// then set shared-base-validated=true.
+		return shared
+	}
+
+	// Add shared resources that depend on DNS below
+
+	return shared
 }
 `))
 
@@ -78,6 +92,12 @@ import (
 )
 
 func NewDeployment(stack awscdk.Stack, shared *Shared, deploymentIdent string) {
+	if !shared.Base.IsValidated() {
+		// Shared base not yet validated - skip deployment resources.
+		return
+	}
+
+	// Add deployment-specific resources below
 }
 `))
 
@@ -349,9 +369,9 @@ func DefaultCDKConfigFromDir(dir string) CDKConfig {
 		Qualifier:        name,
 		PrimaryRegion:    "eu-central-1",
 		SecondaryRegions: []string{"eu-north-1"},
-		BaseDomainName:   "example.com",
+		BaseDomainName:   name + ".basewarp.app",
 		Deployments:      []string{"Prod", "Stag", "Dev1", "Dev2", "Dev3"},
-		EmailPattern:     "admin+{project}@example.com",
+		EmailPattern:     "admin+{project}@crewlinker.com",
 		Services:         DefaultServices(),
 	}
 }
@@ -422,6 +442,10 @@ func initCmd() *cli.Command {
 				Aliases: []string{"y"},
 				Usage:   "Accept all defaults without prompting",
 			},
+			&cli.StringFlag{
+				Name:  "local-ago",
+				Usage: "Path to local ago module (adds replace directive to go.mod)",
+			},
 		},
 		Action: runInit,
 	}
@@ -462,6 +486,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 	cdkConfig.Qualifier = result.ProjectIdent
 	cdkConfig.PrimaryRegion = result.PrimaryRegion
 	cdkConfig.SecondaryRegions = result.SecondaryRegions
+	cdkConfig.BaseDomainName = result.BaseDomainName
 
 	tfConfig := TFConfig{
 		TerraformCloudOrg: result.TerraformCloudOrg,
@@ -480,6 +505,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 		ManagementProfile: result.ManagementProfile,
 		Region:            result.PrimaryRegion,
 		InitialDeployer:   result.InitialDeployer,
+		LocalAgoPath:      cmd.String("local-ago"),
 	})
 }
 
@@ -495,6 +521,10 @@ type InitOptions struct {
 	InitialDeployer     string
 	SkipAccountCreation bool
 	SkipCDKVerify       bool
+	// LocalAgoPath, if set, adds a replace directive to the generated go.mod
+	// to use the local ago module instead of fetching from the module proxy.
+	// This is useful for testing with unpublished changes.
+	LocalAgoPath string
 }
 
 func doInit(ctx context.Context, opts InitOptions) error {
@@ -542,7 +572,7 @@ func doInit(ctx context.Context, opts InitOptions) error {
 		return err
 	}
 
-	if err := configureCDKProject(ctx, exec, opts.Dir, opts.CDKConfig); err != nil {
+	if err := configureCDKProject(ctx, exec, opts.Dir, opts.CDKConfig, opts.LocalAgoPath); err != nil {
 		return err
 	}
 
@@ -644,7 +674,9 @@ func writeMiseToml(dir string, cfg MiseConfig) error {
 	return nil
 }
 
-func configureCDKProject(ctx context.Context, exec cmdexec.Executor, dir string, cfg CDKConfig) error {
+func configureCDKProject(
+	ctx context.Context, exec cmdexec.Executor, dir string, cfg CDKConfig, localAgoPath string,
+) error {
 	infraDir := filepath.Join(dir, "infra")
 	cdkPkgDir := filepath.Join(infraDir, "cdk")
 	cdkDir := filepath.Join(cdkPkgDir, "cdk")
@@ -668,6 +700,14 @@ func configureCDKProject(ctx context.Context, exec cmdexec.Executor, dir string,
 	}
 
 	infraExec := exec.InSubdir("infra")
+
+	if localAgoPath != "" {
+		if err := infraExec.Run(ctx, "go", "mod", "edit",
+			"-replace=github.com/advdv/ago="+localAgoPath); err != nil {
+			return errors.Wrap(err, "failed to add local ago replace directive")
+		}
+	}
+
 	if err := infraExec.Run(ctx, "go", "get", "github.com/advdv/ago/agcdkutil"); err != nil {
 		return errors.Wrap(err, "failed to add agcdkutil dependency")
 	}
@@ -706,12 +746,13 @@ func writeCDKGoFiles(cdkPkgDir, cdkDir string, cfg CDKConfig) error {
 
 func writeCDKContextJSON(cdkDir string, cfg CDKConfig) error {
 	context := map[string]any{
-		cfg.Prefix + "qualifier":         cfg.Qualifier,
-		cfg.Prefix + "primary-region":    cfg.PrimaryRegion,
-		cfg.Prefix + "secondary-regions": cfg.SecondaryRegions,
-		cfg.Prefix + "deployments":       cfg.Deployments,
-		cfg.Prefix + "base-domain-name":  cfg.BaseDomainName,
-		cfg.Prefix + "services":          cfg.Services,
+		cfg.Prefix + "qualifier":             cfg.Qualifier,
+		cfg.Prefix + "primary-region":        cfg.PrimaryRegion,
+		cfg.Prefix + "secondary-regions":     cfg.SecondaryRegions,
+		cfg.Prefix + "deployments":           cfg.Deployments,
+		cfg.Prefix + "base-domain-name":      cfg.BaseDomainName,
+		cfg.Prefix + "services":              cfg.Services,
+		cfg.Prefix + "shared-base-validated": false,
 		"@aws-cdk/core:permissionsBoundary": map[string]string{
 			"name": cfg.Qualifier + "-permissions-boundary",
 		},

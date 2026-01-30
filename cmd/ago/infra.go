@@ -11,6 +11,7 @@ func infraCmd() *cli.Command {
 			destroyAWSAccountCmd(),
 			cdkCmd(),
 			tfCmd(),
+			dnsCmd(),
 		},
 	}
 }

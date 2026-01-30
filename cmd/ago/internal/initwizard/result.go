@@ -7,6 +7,7 @@ type Result struct {
 	ManagementProfile string
 	InitialDeployer   string
 	TerraformCloudOrg string
+	BaseDomainName    string
 }
 
 func DefaultResult(defaultIdent string) Result {
@@ -17,5 +18,6 @@ func DefaultResult(defaultIdent string) Result {
 		ManagementProfile: "crewlinker-management-account",
 		InitialDeployer:   "Adam",
 		TerraformCloudOrg: "basewarp",
+		BaseDomainName:    defaultIdent + ".basewarp.app",
 	}
 }
