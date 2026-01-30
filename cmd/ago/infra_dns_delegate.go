@@ -375,6 +375,8 @@ const (
 	dnsPollingInterval = 10 * time.Second
 	dnsQueryTimeout    = 5 * time.Second
 	publicDNSServer    = "8.8.8.8:53"
+	dnsLookupRetries   = 3
+	dnsRetryDelay      = 100 * time.Millisecond
 )
 
 func waitForDNSPropagation(
@@ -401,7 +403,7 @@ func waitForDNSPropagation(
 			return errors.Errorf("DNS propagation timeout after %v", timeout)
 		}
 
-		nsRecords, err := resolver.LookupNS(ctx, baseDomainName)
+		nsRecords, err := lookupNSWithRetry(ctx, resolver, baseDomainName)
 		if err == nil && nsRecordsMatch(nsRecords, expectedSet) {
 			writeOutputf(output, "\nDNS records verified via %s\n", publicDNSServer)
 			return nil
@@ -419,6 +421,28 @@ func waitForDNSPropagation(
 		case <-time.After(dnsPollingInterval):
 		}
 	}
+}
+
+// lookupNSWithRetry wraps resolver.LookupNS with retries to work around intermittent failures
+// caused by Tailscale's MagicDNS (and possibly other VPN/DNS interception software). When
+// Tailscale is active, Go's resolver intermittently returns "no such host" errors (~25% failure
+// rate) even when using a custom Dial function pointing to 8.8.8.8. The issue disappears when
+// Tailscale is disabled. Retrying resolves the problem without requiring users to disable their VPN.
+func lookupNSWithRetry(ctx context.Context, resolver *net.Resolver, domain string) ([]*net.NS, error) {
+	var lastErr error
+	for range dnsLookupRetries {
+		ns, err := resolver.LookupNS(ctx, domain)
+		if err == nil {
+			return ns, nil
+		}
+		lastErr = err
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(dnsRetryDelay):
+		}
+	}
+	return nil, lastErr
 }
 
 func nsRecordsMatch(records []*net.NS, expected map[string]bool) bool {
