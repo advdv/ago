@@ -108,7 +108,18 @@ func doDNSDelegate(ctx context.Context, cfg config.Config, opts dnsDelegateOptio
 	for _, ns := range nsList {
 		writeOutputf(opts.Output, "  %s\n", ns)
 	}
+	baseDomainName, err := cdkContext.getString("base-domain-name")
+	if err != nil {
+		return err
+	}
+
+	parentZoneID, err := lookupParentZoneID(ctx, exec, managementProfile, region, baseDomainName)
+	if err != nil {
+		return err
+	}
+
 	writeOutputf(opts.Output, "\nManagement profile: %s\n", managementProfile)
+	writeOutputf(opts.Output, "Parent zone ID: %s\n", parentZoneID)
 
 	return nil
 }
@@ -222,4 +233,60 @@ func getCDKProfile(cfg config.Config) (string, error) {
 	}
 
 	return profile, nil
+}
+
+func extractParentDomain(baseDomainName string) (string, error) {
+	parts := strings.Split(baseDomainName, ".")
+	if len(parts) < 3 {
+		return "", errors.Errorf(
+			"base domain %q has no parent domain (need at least 3 labels like 'sub.example.com')",
+			baseDomainName)
+	}
+	return strings.Join(parts[1:], "."), nil
+}
+
+func lookupParentZoneID(
+	ctx context.Context, exec cmdexec.Executor, managementProfile, region, baseDomainName string,
+) (string, error) {
+	parentDomain, err := extractParentDomain(baseDomainName)
+	if err != nil {
+		return "", err
+	}
+
+	dnsName := parentDomain + "."
+
+	output, err := exec.MiseOutput(ctx, "aws", "route53", "list-hosted-zones-by-name",
+		"--dns-name", parentDomain,
+		"--max-items", "1",
+		"--profile", managementProfile,
+		"--region", region,
+		"--output", "json",
+	)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to list hosted zones in management account")
+	}
+
+	var result struct {
+		HostedZones []struct {
+			ID     string `json:"Id"`   //nolint:tagliatelle // AWS API uses PascalCase
+			Name   string `json:"Name"` //nolint:tagliatelle // AWS API uses PascalCase
+			Config struct {
+				PrivateZone bool `json:"PrivateZone"` //nolint:tagliatelle // AWS API uses PascalCase
+			} `json:"Config"` //nolint:tagliatelle // AWS API uses PascalCase
+		} `json:"HostedZones"` //nolint:tagliatelle // AWS API uses PascalCase
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return "", errors.Wrap(err, "failed to parse hosted zones response")
+	}
+
+	for _, zone := range result.HostedZones {
+		if zone.Name == dnsName && !zone.Config.PrivateZone {
+			zoneID := strings.TrimPrefix(zone.ID, "/hostedzone/")
+			return zoneID, nil
+		}
+	}
+
+	return "", errors.Errorf(
+		"no public hosted zone found for %q in management account (profile: %s)",
+		parentDomain, managementProfile)
 }
