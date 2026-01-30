@@ -167,6 +167,11 @@ func doDNSDelegate(ctx context.Context, cfg config.Config, opts dnsDelegateOptio
 		return err
 	}
 
+	if err := setDNSDelegatedFlag(cfg, cdkContext.prefix); err != nil {
+		return err
+	}
+
+	writeOutputf(opts.Output, "Updated cdk.context.json: dns-delegated = true\n")
 	writeOutputf(opts.Output, "\nDNS delegation complete!\n")
 
 	return nil
@@ -281,6 +286,33 @@ func getCDKProfile(cfg config.Config) (string, error) {
 	}
 
 	return profile, nil
+}
+
+func setDNSDelegatedFlag(cfg config.Config, prefix string) error {
+	contextPath := cfg.CDKContextPath()
+
+	data, err := os.ReadFile(contextPath)
+	if err != nil {
+		return errors.Wrap(err, "failed to read cdk.context.json")
+	}
+
+	var context map[string]any
+	if err := json.Unmarshal(data, &context); err != nil {
+		return errors.Wrap(err, "failed to parse cdk.context.json")
+	}
+
+	context[prefix+"dns-delegated"] = true
+
+	output, err := json.MarshalIndent(context, "", "  ")
+	if err != nil {
+		return errors.Wrap(err, "failed to marshal cdk.context.json")
+	}
+
+	if err := os.WriteFile(contextPath, output, 0o644); err != nil { //nolint:gosec // config file needs to be readable
+		return errors.Wrap(err, "failed to write cdk.context.json")
+	}
+
+	return nil
 }
 
 func extractParentDomain(baseDomainName string) (string, error) {

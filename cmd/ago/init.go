@@ -749,14 +749,14 @@ func writeCDKGoFiles(cdkPkgDir, cdkDir string, cfg CDKConfig) error {
 
 func writeCDKContextJSON(cdkDir string, cfg CDKConfig) error {
 	context := map[string]any{
-		cfg.Prefix + "qualifier":             cfg.Qualifier,
-		cfg.Prefix + "primary-region":        cfg.PrimaryRegion,
-		cfg.Prefix + "secondary-regions":     cfg.SecondaryRegions,
-		cfg.Prefix + "deployments":           cfg.Deployments,
-		cfg.Prefix + "base-domain-name":      cfg.BaseDomainName,
-		cfg.Prefix + "services":              cfg.Services,
-		cfg.Prefix + "shared-base-validated": false,
-		cfg.Prefix + "management-profile":    cfg.ManagementProfile,
+		cfg.Prefix + "qualifier":          cfg.Qualifier,
+		cfg.Prefix + "primary-region":     cfg.PrimaryRegion,
+		cfg.Prefix + "secondary-regions":  cfg.SecondaryRegions,
+		cfg.Prefix + "deployments":        cfg.Deployments,
+		cfg.Prefix + "base-domain-name":   cfg.BaseDomainName,
+		cfg.Prefix + "services":           cfg.Services,
+		cfg.Prefix + "dns-delegated":      false,
+		cfg.Prefix + "management-profile": cfg.ManagementProfile,
 		"@aws-cdk/core:permissionsBoundary": map[string]string{
 			"name": cfg.Qualifier + "-permissions-boundary",
 		},

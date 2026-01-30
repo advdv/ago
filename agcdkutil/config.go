@@ -63,24 +63,25 @@ func PrimaryRegion(scope constructs.Construct) string {
 	return ConfigFromScope(scope).PrimaryRegion
 }
 
-// SharedBaseValidated returns whether the shared base infrastructure has been validated.
-// This gates resources that depend on foundational infrastructure (DNS delegation, etc.).
+// DNSDelegated returns whether DNS delegation has been completed.
 // Retrieves Config from the construct tree.
-func SharedBaseValidated(scope constructs.Construct) bool {
-	return ConfigFromScope(scope).SharedBaseValidated
+func DNSDelegated(scope constructs.Construct) bool {
+	return ConfigFromScope(scope).DNSDelegated
 }
 
 // Config holds all CDK context values validated upfront.
 // It centralizes context reading and validation to provide clear error messages.
 type Config struct {
-	Prefix              string   `validate:"required"`
-	Qualifier           string   `validate:"required,max=10"`
-	PrimaryRegion       string   `validate:"required"`
-	SecondaryRegions    []string `validate:"dive,required"`
-	Deployments         []string `validate:"required,dive,required"`
-	DeployerGroups      []string // nil during bootstrap, optional
-	BaseDomainName      string   `validate:"required,fqdn"`
-	SharedBaseValidated bool     // true when foundational infrastructure is validated (DNS delegated, etc.)
+	Prefix           string   `validate:"required"`
+	Qualifier        string   `validate:"required,max=10"`
+	PrimaryRegion    string   `validate:"required"`
+	SecondaryRegions []string `validate:"dive,required"`
+	Deployments      []string `validate:"required,dive,required"`
+	DeployerGroups   []string // nil during bootstrap, optional
+	BaseDomainName   string   `validate:"required,fqdn"`
+
+	// Validation flags for foundational infrastructure
+	DNSDelegated bool // true when DNS delegation is complete
 
 	// From AppConfig (not context)
 	DeployersGroup        string   `validate:"required"`
@@ -103,7 +104,7 @@ func NewConfig(scope constructs.Construct, acfg AppConfig) (*Config, error) {
 	cfg.SecondaryRegions, readErrs = readContextStringSlice(scope, acfg.Prefix+"secondary-regions", readErrs)
 	cfg.Deployments, readErrs = readContextStringSlice(scope, acfg.Prefix+"deployments", readErrs)
 	cfg.BaseDomainName, readErrs = readContextString(scope, acfg.Prefix+"base-domain-name", readErrs)
-	cfg.SharedBaseValidated = readOptionalContextBool(scope, acfg.Prefix+"shared-base-validated")
+	cfg.DNSDelegated = readOptionalContextBool(scope, acfg.Prefix+"dns-delegated")
 
 	// Validate that all regions are known
 	if cfg.PrimaryRegion != "" && !IsKnownRegion(cfg.PrimaryRegion) {

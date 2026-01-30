@@ -6,9 +6,9 @@
 //   - DNS: Route53 hosted zone (must be delegated before dependent resources deploy)
 //   - Certificate: ACM wildcard certificate (only created after DNS is validated)
 //
-// The construct respects the "shared-base-validated" context value:
-//   - When false: Only creates foundational resources (DNS zone), returns early.
-//   - When true: All foundational checks passed, dependent resources can be created.
+// The construct checks validation flags from context (e.g., "dns-delegated"):
+//   - When not all validated: Only creates foundational resources, returns early.
+//   - When all validated: Full infrastructure available.
 package agcdksharedbase
 
 import (
@@ -49,9 +49,9 @@ type sharedBase struct {
 
 // New creates a SharedBase construct with foundational infrastructure.
 //
-// The construct checks the "shared-base-validated" context value:
-//   - false: Creates foundational resources only, returns early.
-//   - true: All validations passed, full infrastructure available.
+// The construct checks validation flags to determine if all foundational
+// infrastructure is ready. Currently requires:
+//   - DNS delegation complete (dns-delegated context flag)
 //
 // Consumers should check IsValidated() before creating dependent resources.
 func New(scope constructs.Construct, props Props) SharedBase {
@@ -64,7 +64,7 @@ func New(scope constructs.Construct, props Props) SharedBase {
 	}
 	base.dns = agcdkdns.New(scope, dnsProps)
 
-	if !agcdkutil.SharedBaseValidated(scope) {
+	if !isValidated(scope) {
 		return base
 	}
 
@@ -75,6 +75,12 @@ func New(scope constructs.Construct, props Props) SharedBase {
 	})
 
 	return base
+}
+
+// isValidated checks all required validation flags.
+// Add additional checks here as more foundational infrastructure is added.
+func isValidated(scope constructs.Construct) bool {
+	return agcdkutil.DNSDelegated(scope)
 }
 
 func (s *sharedBase) DNS() agcdkdns.DNS {
