@@ -31,24 +31,30 @@ func dnsDelegateCmd() *cli.Command {
 				Name:  "region",
 				Usage: "AWS region where the shared stack is deployed (defaults to primary region from context)",
 			},
+			&cli.StringFlag{
+				Name:  "management-profile",
+				Usage: "AWS profile for the management account (defaults to context management-profile)",
+			},
 		},
 		Action: config.RunWithConfig(runDNSDelegate),
 	}
 }
 
 type dnsDelegateOptions struct {
-	StackName string
-	Profile   string
-	Region    string
-	Output    io.Writer
+	StackName         string
+	Profile           string
+	Region            string
+	ManagementProfile string
+	Output            io.Writer
 }
 
 func runDNSDelegate(ctx context.Context, cmd *cli.Command, cfg config.Config) error {
 	return doDNSDelegate(ctx, cfg, dnsDelegateOptions{
-		StackName: cmd.String("stack-name"),
-		Profile:   cmd.String("profile"),
-		Region:    cmd.String("region"),
-		Output:    os.Stdout,
+		StackName:         cmd.String("stack-name"),
+		Profile:           cmd.String("profile"),
+		Region:            cmd.String("region"),
+		ManagementProfile: cmd.String("management-profile"),
+		Output:            os.Stdout,
 	})
 }
 
@@ -89,11 +95,20 @@ func doDNSDelegate(ctx context.Context, cfg config.Config, opts dnsDelegateOptio
 		return err
 	}
 
+	managementProfile := opts.ManagementProfile
+	if managementProfile == "" {
+		managementProfile, err = cdkContext.getString("management-profile")
+		if err != nil {
+			return errors.Wrap(err, "management profile not found in context (run 'ago init' or provide --management-profile)")
+		}
+	}
+
 	nsList := strings.Split(nameServers, ",")
 	writeOutputf(opts.Output, "Name servers for delegation:\n")
 	for _, ns := range nsList {
 		writeOutputf(opts.Output, "  %s\n", ns)
 	}
+	writeOutputf(opts.Output, "\nManagement profile: %s\n", managementProfile)
 
 	return nil
 }

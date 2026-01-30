@@ -342,15 +342,16 @@ formatters:
 `))
 
 type CDKConfig struct {
-	Prefix           string
-	Qualifier        string
-	PrimaryRegion    string
-	SecondaryRegions []string
-	BaseDomainName   string
-	Deployments      []string
-	ModuleName       string
-	EmailPattern     string
-	Services         []string
+	Prefix            string
+	Qualifier         string
+	PrimaryRegion     string
+	SecondaryRegions  []string
+	BaseDomainName    string
+	Deployments       []string
+	ModuleName        string
+	EmailPattern      string
+	Services          []string
+	ManagementProfile string
 }
 
 type TFConfig struct {
@@ -488,6 +489,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 	cdkConfig.PrimaryRegion = result.PrimaryRegion
 	cdkConfig.SecondaryRegions = result.SecondaryRegions
 	cdkConfig.BaseDomainName = result.BaseDomainName
+	cdkConfig.ManagementProfile = result.ManagementProfile
 
 	tfConfig := TFConfig{
 		TerraformCloudOrg: result.TerraformCloudOrg,
@@ -754,6 +756,7 @@ func writeCDKContextJSON(cdkDir string, cfg CDKConfig) error {
 		cfg.Prefix + "base-domain-name":      cfg.BaseDomainName,
 		cfg.Prefix + "services":              cfg.Services,
 		cfg.Prefix + "shared-base-validated": false,
+		cfg.Prefix + "management-profile":    cfg.ManagementProfile,
 		"@aws-cdk/core:permissionsBoundary": map[string]string{
 			"name": cfg.Qualifier + "-permissions-boundary",
 		},
