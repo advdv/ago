@@ -103,12 +103,12 @@ func doDNSDelegate(ctx context.Context, cfg config.Config, opts dnsDelegateOptio
 		}
 	}
 
-	nsList := strings.Split(nameServers, ",")
-	writeOutputf(opts.Output, "Name servers for delegation:\n")
-	for _, ns := range nsList {
-		writeOutputf(opts.Output, "  %s\n", ns)
-	}
 	baseDomainName, err := cdkContext.getString("base-domain-name")
+	if err != nil {
+		return err
+	}
+
+	qualifier, err := cdkContext.getString("qualifier")
 	if err != nil {
 		return err
 	}
@@ -118,8 +118,40 @@ func doDNSDelegate(ctx context.Context, cfg config.Config, opts dnsDelegateOptio
 		return err
 	}
 
-	writeOutputf(opts.Output, "\nManagement profile: %s\n", managementProfile)
-	writeOutputf(opts.Output, "Parent zone ID: %s\n", parentZoneID)
+	nsList := strings.Split(nameServers, ",")
+
+	writeOutputf(opts.Output, "Delegating %s to parent zone %s\n", baseDomainName, parentZoneID)
+	writeOutputf(opts.Output, "Name servers:\n")
+	for _, ns := range nsList {
+		writeOutputf(opts.Output, "  %s\n", ns)
+	}
+
+	templatePath, cleanup, err := renderNSDelegationTemplate(nsDelegationData{
+		Qualifier:      qualifier,
+		BaseDomainName: baseDomainName,
+		ParentZoneID:   parentZoneID,
+		NameServers:    nsList,
+	})
+	if err != nil {
+		return errors.Wrap(err, "failed to render NS delegation template")
+	}
+	defer cleanup()
+
+	stackName = "ago-dns-delegate-" + qualifier
+
+	writeOutputf(opts.Output, "\nDeploying stack %q to management account...\n", stackName)
+
+	if err := exec.Mise(ctx, "aws", "cloudformation", "deploy",
+		"--stack-name", stackName,
+		"--template-file", templatePath,
+		"--region", region,
+		"--profile", managementProfile,
+		"--no-fail-on-empty-changeset",
+	); err != nil {
+		return errors.Wrap(err, "failed to deploy NS delegation stack")
+	}
+
+	writeOutputf(opts.Output, "\nDNS delegation complete!\n")
 
 	return nil
 }

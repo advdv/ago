@@ -347,6 +347,24 @@ Outputs:
       Name: !Sub "${Qualifier}-CIDeployerRoleArn"
 `))
 
+var nsDelegationTemplate = template.Must(template.New("ns-delegation.yaml").Parse(
+	`AWSTemplateFormatVersion: '2010-09-09'
+Description: DNS delegation for {{.Qualifier}} to {{.BaseDomainName}}
+
+Resources:
+  NSDelegation:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: {{.ParentZoneID}}
+      Name: {{.BaseDomainName}}
+      Type: NS
+      TTL: '172800'
+      ResourceRecords:
+{{- range .NameServers}}
+        - {{.}}
+{{- end}}
+`))
+
 type accountStackData struct {
 	Qualifier string
 	Email     string
@@ -376,6 +394,17 @@ func renderPreBootstrapTemplate(qualifier string, services []string) (path strin
 		ConsoleActions:   GenerateConsoleActions(services),
 	}
 	return renderTemplateToTempFile(preBootstrapTemplate, data, "pre-bootstrap-*.yaml")
+}
+
+type nsDelegationData struct {
+	Qualifier      string
+	BaseDomainName string
+	ParentZoneID   string
+	NameServers    []string
+}
+
+func renderNSDelegationTemplate(data nsDelegationData) (path string, cleanup func(), err error) {
+	return renderTemplateToTempFile(nsDelegationTemplate, data, "ns-delegation-*.yaml")
 }
 
 func renderTemplateToTempFile(tmpl *template.Template, data any, pattern string) (string, func(), error) {
