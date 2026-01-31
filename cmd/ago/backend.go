@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/advdv/ago/cmd/ago/internal/cmdexec"
 	"github.com/advdv/ago/cmd/ago/internal/config"
+	"github.com/advdv/ago/cmd/ago/internal/dirhash"
 	"github.com/cockroachdb/errors"
 	"github.com/urfave/cli/v3"
 )
@@ -48,6 +50,17 @@ func backendCmd() *cli.Command {
 					},
 				},
 				Action: config.RunWithConfig(runBackendBuildAndPush),
+			},
+			{
+				Name:  "hash",
+				Usage: "Compute content-based hash of backend source (respects .dockerignore)",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "debug",
+						Usage: "Print visited files to stderr",
+					},
+				},
+				Action: config.RunWithConfig(runBackendHash),
 			},
 		},
 	}
@@ -134,6 +147,8 @@ func doBackendBuildAndPush(ctx context.Context, cfg config.Config, opts backendB
 		return errors.New("no commands found in backend/cmd")
 	}
 
+	repoName := extractRepoName(repoURI)
+
 	for _, cmdName := range cmdNames {
 		writeOutputf(opts.Output, "\nBuilding %s...\n", cmdName)
 
@@ -141,7 +156,11 @@ func doBackendBuildAndPush(ctx context.Context, cfg config.Config, opts backendB
 			CmdName:    cmdName,
 			Deployment: opts.Deployment,
 			RepoURI:    repoURI,
+			RepoName:   repoName,
 			Platform:   opts.Platform,
+			Profile:    profile,
+			Region:     region,
+			RootExec:   exec,
 		})
 		if err != nil {
 			return errors.Wrapf(err, "failed to build and push %s", cmdName)
@@ -157,10 +176,31 @@ type buildImageOptions struct {
 	CmdName    string
 	Deployment string
 	RepoURI    string
+	RepoName   string
 	Platform   string
+	Profile    string
+	Region     string
+	RootExec   cmdexec.Executor
 }
 
 func buildAndPushImage(ctx context.Context, exec cmdexec.Executor, opts buildImageOptions) (string, error) {
+	sourceHash, err := getGitTreeHash(ctx, opts.RootExec)
+	if err != nil {
+		return "", err
+	}
+
+	tag := fmt.Sprintf("%s-%s-%s", opts.CmdName, opts.Deployment, sourceHash)
+	fullImageRef := fmt.Sprintf("%s:%s", opts.RepoURI, tag)
+
+	exists, err := ecrTagExists(ctx, exec, opts.Profile, opts.Region, opts.RepoName, tag)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to check if tag exists")
+	}
+
+	if exists {
+		return tag + " (already exists)", nil
+	}
+
 	metadataFile, err := os.CreateTemp("", "depot-metadata-*.json")
 	if err != nil {
 		return "", errors.Wrap(err, "failed to create metadata temp file")
@@ -203,10 +243,6 @@ func buildAndPushImage(ctx context.Context, exec cmdexec.Executor, opts buildIma
 		return "", errors.New("no build ID found in depot metadata")
 	}
 
-	shortDigest := extractShortDigest(depotMeta.Digest)
-	tag := fmt.Sprintf("%s-%s-%s", opts.CmdName, opts.Deployment, shortDigest)
-	fullImageRef := fmt.Sprintf("%s:%s", opts.RepoURI, tag)
-
 	if err := exec.Mise(ctx, "depot", "push",
 		"--tag", fullImageRef,
 		depotMeta.Build.BuildID,
@@ -217,13 +253,83 @@ func buildAndPushImage(ctx context.Context, exec cmdexec.Executor, opts buildIma
 	return tag, nil
 }
 
-func extractShortDigest(digest string) string {
-	digest = strings.TrimPrefix(digest, "sha256:")
-
-	if len(digest) > 12 {
-		return digest[:12]
+func getGitTreeHash(ctx context.Context, exec cmdexec.Executor) (string, error) {
+	output, err := exec.Output(ctx, "git", "rev-parse", "HEAD^{tree}")
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get git tree hash")
 	}
-	return digest
+	treeHash := strings.TrimSpace(output)
+
+	isDirty, err := isGitDirty(ctx, exec)
+	if err != nil {
+		return "", err
+	}
+
+	if isDirty {
+		diffHash, err := getDiffHash(ctx, exec)
+		if err != nil {
+			return "", err
+		}
+		combined := treeHash + "-" + diffHash
+		if len(combined) > 12 {
+			return combined[:12], nil
+		}
+		return combined, nil
+	}
+
+	if len(treeHash) > 12 {
+		return treeHash[:12], nil
+	}
+	return treeHash, nil
+}
+
+func isGitDirty(ctx context.Context, exec cmdexec.Executor) (bool, error) {
+	output, err := exec.Output(ctx, "git", "status", "--porcelain")
+	if err != nil {
+		return false, errors.Wrap(err, "failed to check git status")
+	}
+	return strings.TrimSpace(output) != "", nil
+}
+
+func getDiffHash(ctx context.Context, exec cmdexec.Executor) (string, error) {
+	diff, err := exec.Output(ctx, "git", "diff", "--no-ext-diff", "HEAD")
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get git diff")
+	}
+	untrackedDiff, _ := exec.Output(ctx, "git", "ls-files", "--others", "--exclude-standard")
+	combined := diff + untrackedDiff
+
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(combined)))
+	if len(hash) > 8 {
+		return hash[:8], nil
+	}
+	return hash, nil
+}
+
+func extractRepoName(repoURI string) string {
+	parts := strings.Split(repoURI, "/")
+	if len(parts) > 1 {
+		return parts[len(parts)-1]
+	}
+	return repoURI
+}
+
+func ecrTagExists(ctx context.Context, exec cmdexec.Executor, profile, region, repoName, tag string) (bool, error) {
+	_, err := exec.MiseOutput(ctx, "aws", "ecr", "describe-images",
+		"--profile", profile,
+		"--region", region,
+		"--repository-name", repoName,
+		"--image-ids", fmt.Sprintf("imageTag=%s", tag),
+		"--query", "imageDetails[0].imageTags",
+		"--output", "text",
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "ImageNotFoundException") {
+			return false, nil
+		}
+		return false, nil
+	}
+	return true, nil
 }
 
 func loginToECR(ctx context.Context, exec cmdexec.Executor, profile, region string) error {
@@ -264,4 +370,25 @@ func getAWSAccountID(ctx context.Context, exec cmdexec.Executor, profile string)
 	}
 
 	return strings.TrimSpace(output), nil
+}
+
+func runBackendHash(_ context.Context, cmd *cli.Command, cfg config.Config) error {
+	backendDir := filepath.Join(cfg.ProjectDir, "backend")
+
+	opts := []dirhash.Option{
+		dirhash.WithAlwaysInclude("Dockerfile", ".dockerignore"),
+	}
+
+	if cmd.Bool("debug") {
+		opts = append(opts, dirhash.WithLogger(&dirhash.DebugLogger{W: os.Stderr}))
+	}
+
+	h := dirhash.New(opts...)
+	hash, err := h.Hash(backendDir, ".dockerignore")
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(os.Stdout, hash)
+	return nil
 }

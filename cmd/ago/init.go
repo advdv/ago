@@ -205,12 +205,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM ubuntu:24.04 AS runtime
 
-RUN groupadd -g 1001 appgroup && \
-    useradd -u 1001 -g appgroup -m -d /app -s /bin/false appuser
+COPY --from=build --chown=1001:1001 /bin/app /usr/local/bin/app
 
-COPY --from=build --chown=appuser:appgroup /bin/app /usr/local/bin/app
-
-USER appuser
+USER 1001:1001
 
 ENV TZ=UTC \
     GOMAXPROCS=0
