@@ -174,6 +174,7 @@ go.work.sum
 
 var backendDockerfileTemplate = template.Must(template.New("Dockerfile").Parse(`# syntax=docker/dockerfile:1
 # Based on: https://depot.dev/docs/container-builds/optimal-dockerfiles/go-dockerfile
+# Reproducible builds: https://go.dev/blog/rebuild
 FROM golang:{{.GoVersion}} AS build
 
 WORKDIR /src
@@ -196,7 +197,9 @@ COPY . .
 ARG CMD_NAME=coreapi
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build \
+    CGO_ENABLED=0 go build \
+    -trimpath \
+    -ldflags="-s -w -buildid=" \
     -o /bin/app \
     ./cmd/${CMD_NAME}
 
@@ -213,6 +216,20 @@ ENV TZ=UTC \
     GOMAXPROCS=0
 
 ENTRYPOINT [ "/usr/local/bin/app" ]
+`))
+
+var backendDockerignoreTemplate = template.Must(template.New(".dockerignore").Parse(`# Ignore everything by default
+*
+
+# Allow Go source files
+!**/*.go
+
+# Allow module files
+!go.mod
+!go.sum
+
+# Allow vendor directory if present
+!vendor/
 `))
 
 var backendDepotJSONTemplate = template.Must(template.New("depot.json").Parse(`{
@@ -967,6 +984,17 @@ func setupBackendProject(ctx context.Context, exec cmdexec.Executor, dir string,
 	//nolint:gosec // config file needs to be readable
 	if err := os.WriteFile(dockerfilePath, dockerfileBuf.Bytes(), 0o644); err != nil {
 		return errors.Wrap(err, "failed to write backend Dockerfile")
+	}
+
+	var dockerignoreBuf bytes.Buffer
+	if err := backendDockerignoreTemplate.Execute(&dockerignoreBuf, nil); err != nil {
+		return errors.Wrap(err, "failed to execute backend .dockerignore template")
+	}
+
+	dockerignorePath := filepath.Join(backendDir, ".dockerignore")
+	//nolint:gosec // config file needs to be readable
+	if err := os.WriteFile(dockerignorePath, dockerignoreBuf.Bytes(), 0o644); err != nil {
+		return errors.Wrap(err, "failed to write backend .dockerignore")
 	}
 
 	if cfg.DepotProjectID != "" {

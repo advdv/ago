@@ -169,12 +169,15 @@ func buildAndPushImage(ctx context.Context, exec cmdexec.Executor, opts buildIma
 	metadataFile.Close()
 	defer os.Remove(metadataPath)
 
+	saveTag := opts.CmdName
+
 	if err := exec.Mise(ctx, "depot", "build",
 		"--file", "Dockerfile",
 		"--build-arg", "CMD_NAME="+opts.CmdName,
 		"--platform", opts.Platform,
 		"--metadata-file", metadataPath,
 		"--save",
+		"--save-tag", saveTag,
 		".",
 	); err != nil {
 		return "", errors.Wrap(err, "depot build failed")
@@ -186,8 +189,7 @@ func buildAndPushImage(ctx context.Context, exec cmdexec.Executor, opts buildIma
 	}
 
 	var depotMeta struct {
-		Digest  string `json:"containerimage.digest"` //nolint:tagliatelle // depot API uses dot notation
-		BuildID string `json:"depot.build.id"`        //nolint:tagliatelle // depot API uses dot notation
+		Digest string `json:"containerimage.digest"` //nolint:tagliatelle // depot API uses dot notation
 	}
 	if err := json.Unmarshal(metadata, &depotMeta); err != nil {
 		return "", errors.Wrap(err, "failed to parse depot metadata")
@@ -203,7 +205,7 @@ func buildAndPushImage(ctx context.Context, exec cmdexec.Executor, opts buildIma
 
 	if err := exec.Mise(ctx, "depot", "push",
 		"--tag", fullImageRef,
-		depotMeta.BuildID,
+		saveTag,
 	); err != nil {
 		return "", errors.Wrap(err, "depot push failed")
 	}
