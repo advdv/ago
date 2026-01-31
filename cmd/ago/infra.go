@@ -7,10 +7,9 @@ func infraCmd() *cli.Command {
 		Name:  "infra",
 		Usage: "Infrastructure and cloud account management",
 		Commands: []*cli.Command{
-			createAWSAccountCmd(),
-			destroyAWSAccountCmd(),
 			cdkCmd(),
 			tfCmd(),
+			orgCmd(),
 		},
 	}
 }

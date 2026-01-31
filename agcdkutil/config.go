@@ -63,6 +63,12 @@ func PrimaryRegion(scope constructs.Construct) string {
 	return ConfigFromScope(scope).PrimaryRegion
 }
 
+// DNSDelegated returns whether DNS delegation has been completed.
+// Retrieves Config from the construct tree.
+func DNSDelegated(scope constructs.Construct) bool {
+	return ConfigFromScope(scope).DNSDelegated
+}
+
 // Config holds all CDK context values validated upfront.
 // It centralizes context reading and validation to provide clear error messages.
 type Config struct {
@@ -73,6 +79,9 @@ type Config struct {
 	Deployments      []string `validate:"required,dive,required"`
 	DeployerGroups   []string // nil during bootstrap, optional
 	BaseDomainName   string   `validate:"required,fqdn"`
+
+	// Validation flags for foundational infrastructure
+	DNSDelegated bool // true when DNS delegation is complete
 
 	// From AppConfig (not context)
 	DeployersGroup        string   `validate:"required"`
@@ -95,6 +104,7 @@ func NewConfig(scope constructs.Construct, acfg AppConfig) (*Config, error) {
 	cfg.SecondaryRegions, readErrs = readContextStringSlice(scope, acfg.Prefix+"secondary-regions", readErrs)
 	cfg.Deployments, readErrs = readContextStringSlice(scope, acfg.Prefix+"deployments", readErrs)
 	cfg.BaseDomainName, readErrs = readContextString(scope, acfg.Prefix+"base-domain-name", readErrs)
+	cfg.DNSDelegated = readOptionalContextBool(scope, acfg.Prefix+"dns-delegated")
 
 	// Validate that all regions are known
 	if cfg.PrimaryRegion != "" && !IsKnownRegion(cfg.PrimaryRegion) {
@@ -258,4 +268,16 @@ func readOptionalDeployerGroups(scope constructs.Construct, prefix string) []str
 		return nil
 	}
 	return strings.Fields(str)
+}
+
+func readOptionalContextBool(scope constructs.Construct, key string) bool {
+	val := scope.Node().TryGetContext(jsii.String(key))
+	if val == nil {
+		return false
+	}
+	b, ok := val.(bool)
+	if !ok {
+		return false
+	}
+	return b
 }

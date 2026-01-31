@@ -4,11 +4,21 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/advdv/ago/cmd/ago/internal/cmdexec"
 )
+
+// localAgoModulePath returns the absolute path to the local ago module root.
+// This is used to add a replace directive in tests so that generated code
+// uses the local (potentially unpublished) ago packages.
+func localAgoModulePath() string {
+	_, thisFile, _, _ := runtime.Caller(0)
+	// thisFile is .../ago/cmd/ago/init_test.go, go up 3 levels to get ago root
+	return filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))
+}
 
 func TestEnsureEmptyDir(t *testing.T) {
 	t.Parallel()
@@ -229,6 +239,7 @@ func TestDoInit(t *testing.T) {
 			RunInstall:          false,
 			SkipAccountCreation: true,
 			SkipCDKVerify:       true,
+			LocalAgoPath:        localAgoModulePath(),
 		}
 
 		err := doInit(context.Background(), opts)
@@ -272,6 +283,7 @@ func TestDoInit(t *testing.T) {
 			RunInstall:          true,
 			SkipAccountCreation: true,
 			SkipCDKVerify:       true,
+			LocalAgoPath:        localAgoModulePath(),
 		}
 
 		err := doInit(context.Background(), opts)

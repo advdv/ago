@@ -11,6 +11,20 @@ import (
 	"github.com/iancoleman/strcase"
 )
 
+// SharedStackName returns the CloudFormation stack name for a shared stack.
+// This is the canonical function for generating shared stack names.
+func SharedStackName(qualifier, regionIdent string) string {
+	base := strcase.ToLowerCamel(fmt.Sprintf("%s-%s", qualifier, regionIdent))
+	return base + "Shared"
+}
+
+// DeploymentStackName returns the CloudFormation stack name for a deployment stack.
+// This is the canonical function for generating deployment stack names.
+func DeploymentStackName(qualifier, regionIdent, deploymentIdent string) string {
+	base := strcase.ToLowerCamel(fmt.Sprintf("%s-%s", qualifier, regionIdent))
+	return base + deploymentIdent
+}
+
 // NewStack creates a new CDK Stack, either shared or multi-deployment.
 //
 // Deprecated: Use NewStackFromConfig instead for upfront validation.
@@ -32,31 +46,33 @@ func NewStackFromConfig(
 func newStackInternal(
 	scope constructs.Construct, qual, regionAcronym, region string, deploymentIdent ...string,
 ) awscdk.Stack {
-	qualifier := strcase.ToLowerCamel(fmt.Sprintf("%s-%s", qual, regionAcronym))
-	stackName := jsii.Sprintf("%sShared", qualifier)
+	var stackName string
+	var description string
 
-	description := jsii.String(fmt.Sprintf("%s (region: %s)",
-		qualifier, region))
-	if len(deploymentIdent) > 0 && deploymentIdent[0] != "" {
-		tident := deploymentIdent[0]
-		if strings.ToUpper(string(tident[0])) != string(tident[0]) {
-			panic("deployment identifier must start with a upper-case letter, got: " + tident)
+	baseIdent := strcase.ToLowerCamel(fmt.Sprintf("%s-%s", qual, regionAcronym))
+
+	switch {
+	case len(deploymentIdent) > 0 && deploymentIdent[0] != "":
+		dident := deploymentIdent[0]
+		if strings.ToUpper(string(dident[0])) != string(dident[0]) {
+			panic("deployment identifier must start with a upper-case letter, got: " + dident)
 		}
 
-		description = jsii.String(fmt.Sprintf("%s (region: %s, deployment: %s)",
-			qualifier, region, tident))
-
-		stackName = jsii.Sprintf("%s%s", qualifier, tident)
-	} else if len(deploymentIdent) > 0 {
+		stackName = DeploymentStackName(qual, regionAcronym, dident)
+		description = fmt.Sprintf("%s (region: %s, deployment: %s)", baseIdent, region, dident)
+	case len(deploymentIdent) > 0:
 		panic("invalid deploymentIdent: " + deploymentIdent[0])
+	default:
+		stackName = SharedStackName(qual, regionAcronym)
+		description = fmt.Sprintf("%s (region: %s)", baseIdent, region)
 	}
 
-	stack := awscdk.NewStack(scope, stackName, &awscdk.StackProps{
+	stack := awscdk.NewStack(scope, jsii.String(stackName), &awscdk.StackProps{
 		Env: &awscdk.Environment{
 			Account: jsii.String(os.Getenv("CDK_DEFAULT_ACCOUNT")),
 			Region:  jsii.String(region),
 		},
-		Description: description,
+		Description: jsii.String(description),
 		Synthesizer: awscdk.NewDefaultStackSynthesizer(&awscdk.DefaultStackSynthesizerProps{
 			Qualifier: jsii.String(qual),
 		}),

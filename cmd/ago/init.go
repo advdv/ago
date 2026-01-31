@@ -26,7 +26,7 @@ granted = "{{.GrantedVersion}}"
 golangci-lint = "{{.GolangciLintVersion}}"
 shellcheck = "{{.ShellcheckVersion}}"
 shfmt = "{{.ShfmtVersion}}"
-ko = "{{.KoVersion}}"
+depot = "{{.DepotVersion}}"
 "github:advdv/ago" = "{{.AgoVersion}}"
 `))
 
@@ -60,14 +60,28 @@ func main() {
 var cdkSharedTemplate = template.Must(template.New("shared.go").Parse(`package cdk
 
 import (
+	"github.com/advdv/ago/agcdk/agcdksharedbase"
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 )
 
 type Shared struct {
+	Base agcdksharedbase.SharedBase
 }
 
 func NewShared(stack awscdk.Stack) *Shared {
-	return &Shared{}
+	shared := &Shared{}
+	shared.Base = agcdksharedbase.New(stack, agcdksharedbase.Props{})
+
+	if !shared.Base.IsValidated() {
+		// Shared base not yet validated - only foundational resources created.
+		// Deploy this first, complete validation steps (e.g., DNS delegation),
+		// then set shared-base-validated=true.
+		return shared
+	}
+
+	// Add shared resources that depend on DNS below
+
+	return shared
 }
 `))
 
@@ -78,6 +92,12 @@ import (
 )
 
 func NewDeployment(stack awscdk.Stack, shared *Shared, deploymentIdent string) {
+	if !shared.Base.IsValidated() {
+		// Shared base not yet validated - skip deployment resources.
+		return
+	}
+
+	// Add deployment-specific resources below
 }
 `))
 
@@ -152,16 +172,76 @@ go.work.sum
 .DS_Store
 `))
 
-var backendKoYamlTemplate = template.Must(template.New(".ko.yaml").Parse(`defaultBaseImage: cgr.dev/chainguard/static:latest
+var backendDockerfileTemplate = template.Must(template.New("Dockerfile").Parse(`# syntax=docker/dockerfile:1
+# Based on: https://depot.dev/docs/container-builds/optimal-dockerfiles/go-dockerfile
+# Reproducible builds: https://go.dev/blog/rebuild
+FROM golang:{{.GoVersion}} AS build
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+COPY vendor* ./vendor/
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    if [ -d "vendor" ]; then \
+    echo "Using vendored dependencies" && \
+    go mod verify; \
+    else \
+    echo "Downloading dependencies" && \
+    go mod download && go mod verify; \
+    fi
+
+COPY . .
+
+ARG CMD_NAME=coreapi
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build \
+    -trimpath \
+    -ldflags="-s -w -buildid=" \
+    -o /bin/app \
+    ./cmd/${CMD_NAME}
+
+FROM ubuntu:24.04 AS runtime
+
+COPY --from=build --chown=1001:1001 /bin/app /usr/local/bin/app
+
+USER 1001:1001
+
+ENV TZ=UTC \
+    GOMAXPROCS=0
+
+ENTRYPOINT [ "/usr/local/bin/app" ]
+`))
+
+var backendDockerignoreTemplate = template.Must(template.New(".dockerignore").Parse(`# Ignore everything by default
+*
+
+# Allow Go source files
+!**/*.go
+
+# Allow module files
+!go.mod
+!go.sum
+
+# Allow vendor directory if present
+!vendor/
+`))
+
+var backendDepotJSONTemplate = template.Must(template.New("depot.json").Parse(`{
+  "id": "{{.DepotProjectID}}"
+}
 `))
 
 var backendCoreAPIMainTemplate = template.Must(template.New("main.go").Parse(`package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func main() {
@@ -170,19 +250,20 @@ func main() {
 		port = "8080"
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "Hello, World!")
+	r := chi.NewRouter()
+
+	r.Get("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("Hello, World!")) //nolint:errcheck // best effort
 	})
 
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ok")
+	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("ok")) //nolint:errcheck // best effort
 	})
 
 	log.Printf("Starting server on :%s", port)
 
 	//nolint:gosec // G114: timeouts configured at infrastructure level
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
@@ -321,15 +402,16 @@ formatters:
 `))
 
 type CDKConfig struct {
-	Prefix           string
-	Qualifier        string
-	PrimaryRegion    string
-	SecondaryRegions []string
-	BaseDomainName   string
-	Deployments      []string
-	ModuleName       string
-	EmailPattern     string
-	Services         []string
+	Prefix            string
+	Qualifier         string
+	PrimaryRegion     string
+	SecondaryRegions  []string
+	BaseDomainName    string
+	Deployments       []string
+	ModuleName        string
+	EmailPattern      string
+	Services          []string
+	ManagementProfile string
 }
 
 type TFConfig struct {
@@ -338,8 +420,9 @@ type TFConfig struct {
 }
 
 type BackendConfig struct {
-	ModuleName string
-	GoVersion  string
+	ModuleName     string
+	GoVersion      string
+	DepotProjectID string
 }
 
 func DefaultCDKConfigFromDir(dir string) CDKConfig {
@@ -349,9 +432,9 @@ func DefaultCDKConfigFromDir(dir string) CDKConfig {
 		Qualifier:        name,
 		PrimaryRegion:    "eu-central-1",
 		SecondaryRegions: []string{"eu-north-1"},
-		BaseDomainName:   "example.com",
+		BaseDomainName:   name + ".basewarp.app",
 		Deployments:      []string{"Prod", "Stag", "Dev1", "Dev2", "Dev3"},
-		EmailPattern:     "admin+{project}@example.com",
+		EmailPattern:     "admin+{project}@crewlinker.com",
 		Services:         DefaultServices(),
 	}
 }
@@ -359,8 +442,9 @@ func DefaultCDKConfigFromDir(dir string) CDKConfig {
 func DefaultBackendConfigFromDir(dir string) BackendConfig {
 	name := filepath.Base(dir)
 	return BackendConfig{
-		ModuleName: "github.com/example/" + name,
-		GoVersion:  "1.25",
+		ModuleName:     "github.com/example/" + name,
+		GoVersion:      "1.25",
+		DepotProjectID: "",
 	}
 }
 
@@ -391,7 +475,7 @@ type MiseConfig struct {
 	GolangciLintVersion string
 	ShellcheckVersion   string
 	ShfmtVersion        string
-	KoVersion           string
+	DepotVersion        string
 	AgoVersion          string
 }
 
@@ -406,7 +490,7 @@ func DefaultMiseConfig() MiseConfig {
 		GolangciLintVersion: "latest",
 		ShellcheckVersion:   "latest",
 		ShfmtVersion:        "latest",
-		KoVersion:           "latest",
+		DepotVersion:        "latest",
 		AgoVersion:          "latest",
 	}
 }
@@ -421,6 +505,10 @@ func initCmd() *cli.Command {
 				Name:    "yes",
 				Aliases: []string{"y"},
 				Usage:   "Accept all defaults without prompting",
+			},
+			&cli.StringFlag{
+				Name:  "local-ago",
+				Usage: "Path to local ago module (adds replace directive to go.mod)",
 			},
 		},
 		Action: runInit,
@@ -462,6 +550,8 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 	cdkConfig.Qualifier = result.ProjectIdent
 	cdkConfig.PrimaryRegion = result.PrimaryRegion
 	cdkConfig.SecondaryRegions = result.SecondaryRegions
+	cdkConfig.BaseDomainName = result.BaseDomainName
+	cdkConfig.ManagementProfile = result.ManagementProfile
 
 	tfConfig := TFConfig{
 		TerraformCloudOrg: result.TerraformCloudOrg,
@@ -469,6 +559,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	backendConfig := DefaultBackendConfigFromDir(dir)
+	backendConfig.DepotProjectID = result.DepotProjectID
 
 	return doInit(ctx, InitOptions{
 		Dir:               dir,
@@ -480,6 +571,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 		ManagementProfile: result.ManagementProfile,
 		Region:            result.PrimaryRegion,
 		InitialDeployer:   result.InitialDeployer,
+		LocalAgoPath:      cmd.String("local-ago"),
 	})
 }
 
@@ -495,6 +587,10 @@ type InitOptions struct {
 	InitialDeployer     string
 	SkipAccountCreation bool
 	SkipCDKVerify       bool
+	// LocalAgoPath, if set, adds a replace directive to the generated go.mod
+	// to use the local ago module instead of fetching from the module proxy.
+	// This is useful for testing with unpublished changes.
+	LocalAgoPath string
 }
 
 func doInit(ctx context.Context, opts InitOptions) error {
@@ -542,7 +638,7 @@ func doInit(ctx context.Context, opts InitOptions) error {
 		return err
 	}
 
-	if err := configureCDKProject(ctx, exec, opts.Dir, opts.CDKConfig); err != nil {
+	if err := configureCDKProject(ctx, exec, opts.Dir, opts.CDKConfig, opts.LocalAgoPath); err != nil {
 		return err
 	}
 
@@ -644,7 +740,9 @@ func writeMiseToml(dir string, cfg MiseConfig) error {
 	return nil
 }
 
-func configureCDKProject(ctx context.Context, exec cmdexec.Executor, dir string, cfg CDKConfig) error {
+func configureCDKProject(
+	ctx context.Context, exec cmdexec.Executor, dir string, cfg CDKConfig, localAgoPath string,
+) error {
 	infraDir := filepath.Join(dir, "infra")
 	cdkPkgDir := filepath.Join(infraDir, "cdk")
 	cdkDir := filepath.Join(cdkPkgDir, "cdk")
@@ -668,6 +766,14 @@ func configureCDKProject(ctx context.Context, exec cmdexec.Executor, dir string,
 	}
 
 	infraExec := exec.InSubdir("infra")
+
+	if localAgoPath != "" {
+		if err := infraExec.Run(ctx, "go", "mod", "edit",
+			"-replace=github.com/advdv/ago="+localAgoPath); err != nil {
+			return errors.Wrap(err, "failed to add local ago replace directive")
+		}
+	}
+
 	if err := infraExec.Run(ctx, "go", "get", "github.com/advdv/ago/agcdkutil"); err != nil {
 		return errors.Wrap(err, "failed to add agcdkutil dependency")
 	}
@@ -706,12 +812,14 @@ func writeCDKGoFiles(cdkPkgDir, cdkDir string, cfg CDKConfig) error {
 
 func writeCDKContextJSON(cdkDir string, cfg CDKConfig) error {
 	context := map[string]any{
-		cfg.Prefix + "qualifier":         cfg.Qualifier,
-		cfg.Prefix + "primary-region":    cfg.PrimaryRegion,
-		cfg.Prefix + "secondary-regions": cfg.SecondaryRegions,
-		cfg.Prefix + "deployments":       cfg.Deployments,
-		cfg.Prefix + "base-domain-name":  cfg.BaseDomainName,
-		cfg.Prefix + "services":          cfg.Services,
+		cfg.Prefix + "qualifier":          cfg.Qualifier,
+		cfg.Prefix + "primary-region":     cfg.PrimaryRegion,
+		cfg.Prefix + "secondary-regions":  cfg.SecondaryRegions,
+		cfg.Prefix + "deployments":        cfg.Deployments,
+		cfg.Prefix + "base-domain-name":   cfg.BaseDomainName,
+		cfg.Prefix + "services":           cfg.Services,
+		cfg.Prefix + "dns-delegated":      false,
+		cfg.Prefix + "management-profile": cfg.ManagementProfile,
 		"@aws-cdk/core:permissionsBoundary": map[string]string{
 			"name": cfg.Qualifier + "-permissions-boundary",
 		},
@@ -864,15 +972,39 @@ func setupBackendProject(ctx context.Context, exec cmdexec.Executor, dir string,
 		return errors.Wrap(err, "failed to write backend .golangci.yml")
 	}
 
-	var koYamlBuf bytes.Buffer
-	if err := backendKoYamlTemplate.Execute(&koYamlBuf, nil); err != nil {
-		return errors.Wrap(err, "failed to execute backend .ko.yaml template")
+	var dockerfileBuf bytes.Buffer
+	if err := backendDockerfileTemplate.Execute(&dockerfileBuf, cfg); err != nil {
+		return errors.Wrap(err, "failed to execute backend Dockerfile template")
 	}
 
-	koYamlPath := filepath.Join(backendDir, ".ko.yaml")
+	dockerfilePath := filepath.Join(backendDir, "Dockerfile")
 	//nolint:gosec // config file needs to be readable
-	if err := os.WriteFile(koYamlPath, koYamlBuf.Bytes(), 0o644); err != nil {
-		return errors.Wrap(err, "failed to write backend .ko.yaml")
+	if err := os.WriteFile(dockerfilePath, dockerfileBuf.Bytes(), 0o644); err != nil {
+		return errors.Wrap(err, "failed to write backend Dockerfile")
+	}
+
+	var dockerignoreBuf bytes.Buffer
+	if err := backendDockerignoreTemplate.Execute(&dockerignoreBuf, nil); err != nil {
+		return errors.Wrap(err, "failed to execute backend .dockerignore template")
+	}
+
+	dockerignorePath := filepath.Join(backendDir, ".dockerignore")
+	//nolint:gosec // config file needs to be readable
+	if err := os.WriteFile(dockerignorePath, dockerignoreBuf.Bytes(), 0o644); err != nil {
+		return errors.Wrap(err, "failed to write backend .dockerignore")
+	}
+
+	if cfg.DepotProjectID != "" {
+		var depotJSONBuf bytes.Buffer
+		if err := backendDepotJSONTemplate.Execute(&depotJSONBuf, cfg); err != nil {
+			return errors.Wrap(err, "failed to execute backend depot.json template")
+		}
+
+		depotJSONPath := filepath.Join(backendDir, "depot.json")
+		//nolint:gosec // config file needs to be readable
+		if err := os.WriteFile(depotJSONPath, depotJSONBuf.Bytes(), 0o644); err != nil {
+			return errors.Wrap(err, "failed to write backend depot.json")
+		}
 	}
 
 	coreAPIDir := filepath.Join(backendDir, "cmd", "coreapi")
