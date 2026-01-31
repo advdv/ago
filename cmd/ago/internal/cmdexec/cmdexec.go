@@ -25,6 +25,9 @@ type Executor interface {
 	// Run executes a command and streams output to configured writers.
 	Run(ctx context.Context, name string, args ...string) error
 
+	// RunWithStdin executes a command with stdin from a reader.
+	RunWithStdin(ctx context.Context, stdin io.Reader, name string, args ...string) error
+
 	// Output executes a command and returns stdout as a string.
 	Output(ctx context.Context, name string, args ...string) (string, error)
 
@@ -80,6 +83,20 @@ func (e *executor) Dir() string {
 func (e *executor) Run(ctx context.Context, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = e.dir
+	cmd.Stdout = e.stdout
+	cmd.Stderr = e.stderr
+
+	if err := cmd.Run(); err != nil {
+		return errors.Wrapf(err, "%s failed", name)
+	}
+
+	return nil
+}
+
+func (e *executor) RunWithStdin(ctx context.Context, stdin io.Reader, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = e.dir
+	cmd.Stdin = stdin
 	cmd.Stdout = e.stdout
 	cmd.Stderr = e.stderr
 

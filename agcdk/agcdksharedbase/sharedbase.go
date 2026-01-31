@@ -4,6 +4,7 @@
 // SharedBase encapsulates resources that must be deployed and validated before
 // other shared or deployment resources can work. Currently this includes:
 //   - DNS: Route53 hosted zone (must be delegated before dependent resources deploy)
+//   - ECR: Container registry (created in all regions with cross-region replication)
 //   - Certificate: ACM wildcard certificate (only created after DNS is validated)
 //
 // The construct checks validation flags from context (e.g., "dns-delegated"):
@@ -12,8 +13,9 @@
 package agcdksharedbase
 
 import (
-	"github.com/advdv/ago/agcdk/agcdkcert"
+	"github.com/advdv/ago/agcdk/agcdkcerts"
 	"github.com/advdv/ago/agcdk/agcdkdns"
+	"github.com/advdv/ago/agcdk/agcdkrepos"
 	"github.com/advdv/ago/agcdkutil"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
@@ -25,9 +27,13 @@ type SharedBase interface {
 	// Always created, even before validation.
 	DNS() agcdkdns.DNS
 
-	// Certificate returns the Certificate construct, or nil if not yet validated.
+	// Repositories returns the Repositories construct.
+	// Always created in all regions, even before validation.
+	Repositories() agcdkrepos.Repositories
+
+	// Certificates returns the Certificates construct, or nil if not yet validated.
 	// Only available after IsValidated() returns true.
-	Certificate() agcdkcert.Certificate
+	Certificates() agcdkcerts.Certificates
 
 	// IsValidated returns true if DNS has been validated and all
 	// foundational resources are available.
@@ -39,12 +45,17 @@ type Props struct {
 	// DNSProps configures the DNS construct.
 	// Optional: defaults will use base domain name from config.
 	DNSProps *agcdkdns.Props
+
+	// RepositoriesProps configures the Repositories construct.
+	// Optional: defaults will use qualifier-based naming.
+	RepositoriesProps *agcdkrepos.Props
 }
 
 type sharedBase struct {
-	dns         agcdkdns.DNS
-	certificate agcdkcert.Certificate
-	validated   bool
+	dns          agcdkdns.DNS
+	repositories agcdkrepos.Repositories
+	certificates agcdkcerts.Certificates
+	validated    bool
 }
 
 // New creates a SharedBase construct with foundational infrastructure.
@@ -64,13 +75,19 @@ func New(scope constructs.Construct, props Props) SharedBase {
 	}
 	base.dns = agcdkdns.New(scope, dnsProps)
 
+	reposProps := agcdkrepos.Props{}
+	if props.RepositoriesProps != nil {
+		reposProps = *props.RepositoriesProps
+	}
+	base.repositories = agcdkrepos.New(scope, reposProps)
+
 	if !isValidated(scope) {
 		return base
 	}
 
 	base.validated = true
 
-	base.certificate = agcdkcert.New(scope, agcdkcert.Props{
+	base.certificates = agcdkcerts.New(scope, agcdkcerts.Props{
 		HostedZone: base.dns.HostedZone(),
 	})
 
@@ -87,8 +104,12 @@ func (s *sharedBase) DNS() agcdkdns.DNS {
 	return s.dns
 }
 
-func (s *sharedBase) Certificate() agcdkcert.Certificate {
-	return s.certificate
+func (s *sharedBase) Repositories() agcdkrepos.Repositories {
+	return s.repositories
+}
+
+func (s *sharedBase) Certificates() agcdkcerts.Certificates {
+	return s.certificates
 }
 
 func (s *sharedBase) IsValidated() bool {

@@ -26,7 +26,7 @@ granted = "{{.GrantedVersion}}"
 golangci-lint = "{{.GolangciLintVersion}}"
 shellcheck = "{{.ShellcheckVersion}}"
 shfmt = "{{.ShfmtVersion}}"
-ko = "{{.KoVersion}}"
+depot = "{{.DepotVersion}}"
 "github:advdv/ago" = "{{.AgoVersion}}"
 `))
 
@@ -172,8 +172,48 @@ go.work.sum
 .DS_Store
 `))
 
-var backendKoYamlTemplate = template.Must(template.New(".ko.yaml").Parse(
-	`defaultBaseImage: cgr.dev/chainguard/static:latest
+var backendDockerfileTemplate = template.Must(template.New("Dockerfile").Parse(`# syntax=docker/dockerfile:1
+ARG GO_VERSION={{.GoVersion}}
+
+FROM golang:${GO_VERSION} AS build
+
+WORKDIR /app
+
+COPY go.mod go.sum* ./
+COPY vendor ./vendor
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    if [ -d vendor ]; then \
+        go mod verify; \
+    else \
+        go mod download; \
+    fi
+
+COPY . .
+
+ARG CMD_NAME
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -trimpath -ldflags="-buildid= -s -w" -buildvcs=false \
+    -o /app/server ./cmd/${CMD_NAME}
+
+FROM ubuntu:24.04 AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --system nonroot && useradd --system --gid nonroot nonroot
+
+COPY --from=build /app/server /usr/local/bin/server
+
+USER nonroot:nonroot
+
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["/usr/local/bin/server"]
 `))
 
 var backendCoreAPIMainTemplate = template.Must(template.New("main.go").Parse(`package main
@@ -413,7 +453,7 @@ type MiseConfig struct {
 	GolangciLintVersion string
 	ShellcheckVersion   string
 	ShfmtVersion        string
-	KoVersion           string
+	DepotVersion        string
 	AgoVersion          string
 }
 
@@ -428,7 +468,7 @@ func DefaultMiseConfig() MiseConfig {
 		GolangciLintVersion: "latest",
 		ShellcheckVersion:   "latest",
 		ShfmtVersion:        "latest",
-		KoVersion:           "latest",
+		DepotVersion:        "latest",
 		AgoVersion:          "latest",
 	}
 }
@@ -909,15 +949,15 @@ func setupBackendProject(ctx context.Context, exec cmdexec.Executor, dir string,
 		return errors.Wrap(err, "failed to write backend .golangci.yml")
 	}
 
-	var koYamlBuf bytes.Buffer
-	if err := backendKoYamlTemplate.Execute(&koYamlBuf, nil); err != nil {
-		return errors.Wrap(err, "failed to execute backend .ko.yaml template")
+	var dockerfileBuf bytes.Buffer
+	if err := backendDockerfileTemplate.Execute(&dockerfileBuf, cfg); err != nil {
+		return errors.Wrap(err, "failed to execute backend Dockerfile template")
 	}
 
-	koYamlPath := filepath.Join(backendDir, ".ko.yaml")
+	dockerfilePath := filepath.Join(backendDir, "Dockerfile")
 	//nolint:gosec // config file needs to be readable
-	if err := os.WriteFile(koYamlPath, koYamlBuf.Bytes(), 0o644); err != nil {
-		return errors.Wrap(err, "failed to write backend .ko.yaml")
+	if err := os.WriteFile(dockerfilePath, dockerfileBuf.Bytes(), 0o644); err != nil {
+		return errors.Wrap(err, "failed to write backend Dockerfile")
 	}
 
 	coreAPIDir := filepath.Join(backendDir, "cmd", "coreapi")
