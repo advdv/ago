@@ -3,7 +3,6 @@ package config
 import (
 	"context"
 	"os"
-	"path/filepath"
 
 	"github.com/urfave/cli/v3"
 )
@@ -13,21 +12,6 @@ type contextKey struct{}
 type Config struct {
 	Inner      InnerConfig
 	ProjectDir string
-}
-
-// CDKDir returns the path to the CDK directory (infra/cdk/cdk).
-func (c Config) CDKDir() string {
-	return filepath.Join(c.ProjectDir, "infra", "cdk", "cdk")
-}
-
-// CDKContextPath returns the path to cdk.context.json.
-func (c Config) CDKContextPath() string {
-	return filepath.Join(c.CDKDir(), "cdk.context.json")
-}
-
-// CDKJSONPath returns the path to cdk.json.
-func (c Config) CDKJSONPath() string {
-	return filepath.Join(c.CDKDir(), "cdk.json")
 }
 
 func WithContext(ctx context.Context, cfg Config) context.Context {

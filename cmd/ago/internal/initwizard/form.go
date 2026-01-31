@@ -26,8 +26,6 @@ func (b *formBuilder) Build(defaultIdent string, result *Result) *huh.Form {
 			b.secondaryRegionsSelect(&result.PrimaryRegion, &result.SecondaryRegions),
 			b.initialDeployerInput(&result.InitialDeployer),
 			b.terraformCloudOrgInput(&result.TerraformCloudOrg),
-			b.baseDomainNameInput(&result.BaseDomainName),
-			b.depotProjectIDInput(&result.DepotProjectID),
 		),
 	)
 }
@@ -86,21 +84,6 @@ func (b *formBuilder) terraformCloudOrgInput(value *string) *huh.Input {
 		Value(value)
 }
 
-func (b *formBuilder) baseDomainNameInput(value *string) *huh.Input {
-	return huh.NewInput().
-		Title("Base domain name").
-		Description("Root domain for the project (e.g., basewarp.app)").
-		Value(value).
-		Validate(ValidateBaseDomainName)
-}
-
-func (b *formBuilder) depotProjectIDInput(value *string) *huh.Input {
-	return huh.NewInput().
-		Title("Depot project ID").
-		Description("Depot.dev project ID for container builds (optional, can configure later)").
-		Value(value)
-}
-
 func ValidateProjectIdent(s string) error {
 	if s == "" {
 		return errors.New("project identifier is required")
@@ -121,50 +104,4 @@ func ValidateProjectIdent(s string) error {
 
 func IsValidIdentChar(c rune) bool {
 	return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-'
-}
-
-func ValidateBaseDomainName(s string) error {
-	if s == "" {
-		return errors.New("base domain name is required")
-	}
-	if !isDomainName(s) {
-		return errors.New("invalid domain name format")
-	}
-	return nil
-}
-
-func isDomainName(s string) bool {
-	if len(s) == 0 || len(s) > 253 {
-		return false
-	}
-	for _, part := range splitDomain(s) {
-		if len(part) == 0 || len(part) > 63 {
-			return false
-		}
-		for i, c := range part {
-			isLetter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-			isDigit := c >= '0' && c <= '9'
-			isHyphen := c == '-'
-			if i == 0 && !isLetter && !isDigit {
-				return false
-			}
-			if !isLetter && !isDigit && !isHyphen {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func splitDomain(s string) []string {
-	var parts []string
-	start := 0
-	for i := range len(s) {
-		if s[i] == '.' {
-			parts = append(parts, s[start:i])
-			start = i + 1
-		}
-	}
-	parts = append(parts, s[start:])
-	return parts
 }

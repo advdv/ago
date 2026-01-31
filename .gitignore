@@ -39,3 +39,5 @@ go.work.sum
 /testprojects
 # Added by goreleaser init:
 dist/
+
+.DS_Store
