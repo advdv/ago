@@ -173,47 +173,46 @@ go.work.sum
 `))
 
 var backendDockerfileTemplate = template.Must(template.New("Dockerfile").Parse(`# syntax=docker/dockerfile:1
-ARG GO_VERSION={{.GoVersion}}
+# Based on: https://depot.dev/docs/container-builds/optimal-dockerfiles/go-dockerfile
+FROM golang:{{.GoVersion}} AS build
 
-FROM golang:${GO_VERSION} AS build
+WORKDIR /src
 
-WORKDIR /app
-
-COPY go.mod go.sum* ./
-COPY vendor ./vendor
+COPY go.mod go.sum ./
+COPY vendor* ./vendor/
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    if [ -d vendor ]; then \
-        go mod verify; \
+    if [ -d "vendor" ]; then \
+    echo "Using vendored dependencies" && \
+    go mod verify; \
     else \
-        go mod download; \
+    echo "Downloading dependencies" && \
+    go mod download && go mod verify; \
     fi
 
 COPY . .
 
-ARG CMD_NAME
+ARG CMD_NAME=coreapi
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-buildid= -s -w" -buildvcs=false \
-    -o /app/server ./cmd/${CMD_NAME}
+    go build \
+    -o /bin/app \
+    ./cmd/${CMD_NAME}
 
 FROM ubuntu:24.04 AS runtime
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN groupadd -g 1001 appgroup && \
+    useradd -u 1001 -g appgroup -m -d /app -s /bin/false appuser
 
-RUN groupadd --system nonroot && useradd --system --gid nonroot nonroot
+COPY --from=build --chown=appuser:appgroup /bin/app /usr/local/bin/app
 
-COPY --from=build /app/server /usr/local/bin/server
+USER appuser
 
-USER nonroot:nonroot
+ENV TZ=UTC \
+    GOMAXPROCS=0
 
-ENV PORT=8080
-EXPOSE 8080
-
-CMD ["/usr/local/bin/server"]
+ENTRYPOINT [ "/usr/local/bin/app" ]
 `))
 
 var backendDepotJSONTemplate = template.Must(template.New("depot.json").Parse(`{
@@ -224,10 +223,11 @@ var backendDepotJSONTemplate = template.Must(template.New("depot.json").Parse(`{
 var backendCoreAPIMainTemplate = template.Must(template.New("main.go").Parse(`package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func main() {
@@ -236,19 +236,20 @@ func main() {
 		port = "8080"
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "Hello, World!")
+	r := chi.NewRouter()
+
+	r.Get("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("Hello, World!")) //nolint:errcheck // best effort
 	})
 
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ok")
+	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("ok")) //nolint:errcheck // best effort
 	})
 
 	log.Printf("Starting server on :%s", port)
 
 	//nolint:gosec // G114: timeouts configured at infrastructure level
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
