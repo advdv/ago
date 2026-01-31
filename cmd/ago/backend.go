@@ -169,15 +169,12 @@ func buildAndPushImage(ctx context.Context, exec cmdexec.Executor, opts buildIma
 	metadataFile.Close()
 	defer os.Remove(metadataPath)
 
-	saveTag := opts.CmdName
-
 	if err := exec.Mise(ctx, "depot", "build",
 		"--file", "Dockerfile",
 		"--build-arg", "CMD_NAME="+opts.CmdName,
 		"--platform", opts.Platform,
 		"--metadata-file", metadataPath,
 		"--save",
-		"--save-tag", saveTag,
 		".",
 	); err != nil {
 		return "", errors.Wrap(err, "depot build failed")
@@ -190,6 +187,9 @@ func buildAndPushImage(ctx context.Context, exec cmdexec.Executor, opts buildIma
 
 	var depotMeta struct {
 		Digest string `json:"containerimage.digest"` //nolint:tagliatelle // depot API uses dot notation
+		Build  struct {
+			BuildID string `json:"buildID"` //nolint:tagliatelle // depot API uses camelCase
+		} `json:"depot.build"` //nolint:tagliatelle // depot API uses dot notation
 	}
 	if err := json.Unmarshal(metadata, &depotMeta); err != nil {
 		return "", errors.Wrap(err, "failed to parse depot metadata")
@@ -199,13 +199,17 @@ func buildAndPushImage(ctx context.Context, exec cmdexec.Executor, opts buildIma
 		return "", errors.New("no digest found in depot metadata")
 	}
 
+	if depotMeta.Build.BuildID == "" {
+		return "", errors.New("no build ID found in depot metadata")
+	}
+
 	shortDigest := extractShortDigest(depotMeta.Digest)
 	tag := fmt.Sprintf("%s-%s-%s", opts.CmdName, opts.Deployment, shortDigest)
 	fullImageRef := fmt.Sprintf("%s:%s", opts.RepoURI, tag)
 
 	if err := exec.Mise(ctx, "depot", "push",
 		"--tag", fullImageRef,
-		saveTag,
+		depotMeta.Build.BuildID,
 	); err != nil {
 		return "", errors.Wrap(err, "depot push failed")
 	}
