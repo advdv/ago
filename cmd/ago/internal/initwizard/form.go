@@ -27,6 +27,7 @@ func (b *formBuilder) Build(defaultIdent string, result *Result) *huh.Form {
 			b.initialDeployerInput(&result.InitialDeployer),
 			b.terraformCloudOrgInput(&result.TerraformCloudOrg),
 			b.baseDomainNameInput(&result.BaseDomainName),
+			b.depotProjectIDInput(&result.DepotProjectID),
 		),
 	)
 }
@@ -91,6 +92,13 @@ func (b *formBuilder) baseDomainNameInput(value *string) *huh.Input {
 		Description("Root domain for the project (e.g., basewarp.app)").
 		Value(value).
 		Validate(ValidateBaseDomainName)
+}
+
+func (b *formBuilder) depotProjectIDInput(value *string) *huh.Input {
+	return huh.NewInput().
+		Title("Depot project ID").
+		Description("Depot.dev project ID for container builds (optional, can configure later)").
+		Value(value)
 }
 
 func ValidateProjectIdent(s string) error {

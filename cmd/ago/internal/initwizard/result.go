@@ -8,6 +8,7 @@ type Result struct {
 	InitialDeployer   string
 	TerraformCloudOrg string
 	BaseDomainName    string
+	DepotProjectID    string
 }
 
 func DefaultResult(defaultIdent string) Result {
@@ -19,5 +20,6 @@ func DefaultResult(defaultIdent string) Result {
 		InitialDeployer:   "Adam",
 		TerraformCloudOrg: "basewarp",
 		BaseDomainName:    defaultIdent + ".basewarp.app",
+		DepotProjectID:    "m4k6zm1749",
 	}
 }

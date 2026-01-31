@@ -216,6 +216,11 @@ EXPOSE 8080
 CMD ["/usr/local/bin/server"]
 `))
 
+var backendDepotJSONTemplate = template.Must(template.New("depot.json").Parse(`{
+  "id": "{{.DepotProjectID}}"
+}
+`))
+
 var backendCoreAPIMainTemplate = template.Must(template.New("main.go").Parse(`package main
 
 import (
@@ -400,8 +405,9 @@ type TFConfig struct {
 }
 
 type BackendConfig struct {
-	ModuleName string
-	GoVersion  string
+	ModuleName     string
+	GoVersion      string
+	DepotProjectID string
 }
 
 func DefaultCDKConfigFromDir(dir string) CDKConfig {
@@ -421,8 +427,9 @@ func DefaultCDKConfigFromDir(dir string) CDKConfig {
 func DefaultBackendConfigFromDir(dir string) BackendConfig {
 	name := filepath.Base(dir)
 	return BackendConfig{
-		ModuleName: "github.com/example/" + name,
-		GoVersion:  "1.25",
+		ModuleName:     "github.com/example/" + name,
+		GoVersion:      "1.25",
+		DepotProjectID: "",
 	}
 }
 
@@ -537,6 +544,7 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	backendConfig := DefaultBackendConfigFromDir(dir)
+	backendConfig.DepotProjectID = result.DepotProjectID
 
 	return doInit(ctx, InitOptions{
 		Dir:               dir,
@@ -958,6 +966,19 @@ func setupBackendProject(ctx context.Context, exec cmdexec.Executor, dir string,
 	//nolint:gosec // config file needs to be readable
 	if err := os.WriteFile(dockerfilePath, dockerfileBuf.Bytes(), 0o644); err != nil {
 		return errors.Wrap(err, "failed to write backend Dockerfile")
+	}
+
+	if cfg.DepotProjectID != "" {
+		var depotJSONBuf bytes.Buffer
+		if err := backendDepotJSONTemplate.Execute(&depotJSONBuf, cfg); err != nil {
+			return errors.Wrap(err, "failed to execute backend depot.json template")
+		}
+
+		depotJSONPath := filepath.Join(backendDir, "depot.json")
+		//nolint:gosec // config file needs to be readable
+		if err := os.WriteFile(depotJSONPath, depotJSONBuf.Bytes(), 0o644); err != nil {
+			return errors.Wrap(err, "failed to write backend depot.json")
+		}
 	}
 
 	coreAPIDir := filepath.Join(backendDir, "cmd", "coreapi")
