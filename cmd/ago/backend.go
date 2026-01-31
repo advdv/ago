@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -149,6 +147,12 @@ func doBackendBuildAndPush(ctx context.Context, cfg config.Config, opts backendB
 
 	repoName := extractRepoName(repoURI)
 
+	h := dirhash.New(dirhash.WithAlwaysInclude("Dockerfile", ".dockerignore"))
+	sourceHash, err := h.Hash(backendExec.Dir(), ".dockerignore")
+	if err != nil {
+		return errors.Wrap(err, "failed to compute backend source hash")
+	}
+
 	for _, cmdName := range cmdNames {
 		writeOutputf(opts.Output, "\nBuilding %s...\n", cmdName)
 
@@ -160,7 +164,7 @@ func doBackendBuildAndPush(ctx context.Context, cfg config.Config, opts backendB
 			Platform:   opts.Platform,
 			Profile:    profile,
 			Region:     region,
-			RootExec:   exec,
+			SourceHash: sourceHash,
 		})
 		if err != nil {
 			return errors.Wrapf(err, "failed to build and push %s", cmdName)
@@ -180,16 +184,11 @@ type buildImageOptions struct {
 	Platform   string
 	Profile    string
 	Region     string
-	RootExec   cmdexec.Executor
+	SourceHash string
 }
 
 func buildAndPushImage(ctx context.Context, exec cmdexec.Executor, opts buildImageOptions) (string, error) {
-	sourceHash, err := getGitTreeHash(ctx, opts.RootExec)
-	if err != nil {
-		return "", err
-	}
-
-	tag := fmt.Sprintf("%s-%s-%s", opts.CmdName, opts.Deployment, sourceHash)
+	tag := fmt.Sprintf("%s-%s-%s", opts.CmdName, opts.Deployment, opts.SourceHash)
 	fullImageRef := fmt.Sprintf("%s:%s", opts.RepoURI, tag)
 
 	exists, err := ecrTagExists(ctx, exec, opts.Profile, opts.Region, opts.RepoName, tag)
@@ -201,109 +200,18 @@ func buildAndPushImage(ctx context.Context, exec cmdexec.Executor, opts buildIma
 		return tag + " (already exists)", nil
 	}
 
-	metadataFile, err := os.CreateTemp("", "depot-metadata-*.json")
-	if err != nil {
-		return "", errors.Wrap(err, "failed to create metadata temp file")
-	}
-	metadataPath := metadataFile.Name()
-	metadataFile.Close()
-	defer os.Remove(metadataPath)
-
 	if err := exec.Mise(ctx, "depot", "build",
 		"--file", "Dockerfile",
 		"--build-arg", "CMD_NAME="+opts.CmdName,
 		"--platform", opts.Platform,
-		"--metadata-file", metadataPath,
-		"--save",
+		"--push",
+		"--tag", fullImageRef,
 		".",
 	); err != nil {
 		return "", errors.Wrap(err, "depot build failed")
 	}
 
-	metadata, err := os.ReadFile(metadataPath)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to read depot metadata file")
-	}
-
-	var depotMeta struct {
-		Digest string `json:"containerimage.digest"` //nolint:tagliatelle // depot API uses dot notation
-		Build  struct {
-			BuildID string `json:"buildID"` //nolint:tagliatelle // depot API uses camelCase
-		} `json:"depot.build"` //nolint:tagliatelle // depot API uses dot notation
-	}
-	if err := json.Unmarshal(metadata, &depotMeta); err != nil {
-		return "", errors.Wrap(err, "failed to parse depot metadata")
-	}
-
-	if depotMeta.Digest == "" {
-		return "", errors.New("no digest found in depot metadata")
-	}
-
-	if depotMeta.Build.BuildID == "" {
-		return "", errors.New("no build ID found in depot metadata")
-	}
-
-	if err := exec.Mise(ctx, "depot", "push",
-		"--tag", fullImageRef,
-		depotMeta.Build.BuildID,
-	); err != nil {
-		return "", errors.Wrap(err, "depot push failed")
-	}
-
 	return tag, nil
-}
-
-func getGitTreeHash(ctx context.Context, exec cmdexec.Executor) (string, error) {
-	output, err := exec.Output(ctx, "git", "rev-parse", "HEAD^{tree}")
-	if err != nil {
-		return "", errors.Wrap(err, "failed to get git tree hash")
-	}
-	treeHash := strings.TrimSpace(output)
-
-	isDirty, err := isGitDirty(ctx, exec)
-	if err != nil {
-		return "", err
-	}
-
-	if isDirty {
-		diffHash, err := getDiffHash(ctx, exec)
-		if err != nil {
-			return "", err
-		}
-		combined := treeHash + "-" + diffHash
-		if len(combined) > 12 {
-			return combined[:12], nil
-		}
-		return combined, nil
-	}
-
-	if len(treeHash) > 12 {
-		return treeHash[:12], nil
-	}
-	return treeHash, nil
-}
-
-func isGitDirty(ctx context.Context, exec cmdexec.Executor) (bool, error) {
-	output, err := exec.Output(ctx, "git", "status", "--porcelain")
-	if err != nil {
-		return false, errors.Wrap(err, "failed to check git status")
-	}
-	return strings.TrimSpace(output) != "", nil
-}
-
-func getDiffHash(ctx context.Context, exec cmdexec.Executor) (string, error) {
-	diff, err := exec.Output(ctx, "git", "diff", "--no-ext-diff", "HEAD")
-	if err != nil {
-		return "", errors.Wrap(err, "failed to get git diff")
-	}
-	untrackedDiff, _ := exec.Output(ctx, "git", "ls-files", "--others", "--exclude-standard")
-	combined := diff + untrackedDiff
-
-	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(combined)))
-	if len(hash) > 8 {
-		return hash[:8], nil
-	}
-	return hash, nil
 }
 
 func extractRepoName(repoURI string) string {
