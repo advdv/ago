@@ -26,8 +26,7 @@ func backendCmd() *cli.Command {
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:  "deployment",
-						Usage: "Deployment identifier (e.g., dev, stag, prod)",
-						Value: "dev",
+						Usage: "Deployment identifier (e.g., Dev1, Stag, Prod). Auto-detects from AWS username if omitted.",
 					},
 					&cli.StringFlag{
 						Name:  "profile",
@@ -89,6 +88,20 @@ type backendBuildAndPushOptions struct {
 func doBackendBuildAndPush(ctx context.Context, cfg config.Config, opts backendBuildAndPushOptions) error {
 	exec := cmdexec.New(cfg).WithOutput(opts.Output, opts.ErrOut)
 	backendExec := exec.InSubdir("backend")
+
+	cdk, err := loadCDKContext(cfg)
+	if err != nil {
+		return err
+	}
+
+	username, usernameErr := getCallerUsername(ctx, exec, cdk.Qualifier, cdk.CDKContext)
+
+	deployment, err := resolveDeploymentIdent(cdkCommandOptions{
+		Deployment: opts.Deployment,
+	}, cdk.Prefix, cdk.CDKContext, username, usernameErr)
+	if err != nil {
+		return err
+	}
 
 	cdkContext, err := readCDKContext(cfg)
 	if err != nil {
@@ -158,7 +171,7 @@ func doBackendBuildAndPush(ctx context.Context, cfg config.Config, opts backendB
 
 		tag, err := buildAndPushImage(ctx, backendExec, buildImageOptions{
 			CmdName:    cmdName,
-			Deployment: opts.Deployment,
+			Deployment: deployment,
 			RepoURI:    repoURI,
 			RepoName:   repoName,
 			Platform:   opts.Platform,

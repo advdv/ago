@@ -194,7 +194,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 COPY . .
 
-ARG CMD_NAME=coreapi
+ARG CMD_NAME=coreback
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build \
@@ -234,7 +234,7 @@ var backendDepotJSONTemplate = template.Must(template.New("depot.json").Parse(`{
 }
 `))
 
-var backendCoreAPIMainTemplate = template.Must(template.New("main.go").Parse(`package main
+var backendCoreBackMainTemplate = template.Must(template.New("main.go").Parse(`package main
 
 import (
 	"log"
@@ -1013,17 +1013,17 @@ func setupBackendProject(ctx context.Context, exec cmdexec.Executor, dir string,
 		}
 	}
 
-	coreAPIDir := filepath.Join(backendDir, "cmd", "coreapi")
-	if err := os.MkdirAll(coreAPIDir, 0o755); err != nil {
-		return errors.Wrap(err, "failed to create backend cmd/coreapi directory")
+	coreBackDir := filepath.Join(backendDir, "cmd", "coreback")
+	if err := os.MkdirAll(coreBackDir, 0o755); err != nil {
+		return errors.Wrap(err, "failed to create backend cmd/coreback directory")
 	}
 
 	var mainBuf bytes.Buffer
-	if err := backendCoreAPIMainTemplate.Execute(&mainBuf, nil); err != nil {
+	if err := backendCoreBackMainTemplate.Execute(&mainBuf, nil); err != nil {
 		return errors.Wrap(err, "failed to execute backend main.go template")
 	}
 
-	mainPath := filepath.Join(coreAPIDir, "main.go")
+	mainPath := filepath.Join(coreBackDir, "main.go")
 	//nolint:gosec // source file needs to be readable
 	if err := os.WriteFile(mainPath, mainBuf.Bytes(), 0o644); err != nil {
 		return errors.Wrap(err, "failed to write backend main.go")
@@ -1058,18 +1058,18 @@ func trySetDNSDelegatedIfResolved(ctx context.Context, dir string, cdkCfg CDKCon
 
 	expectedNS, err := lookupExpectedNSFromParent(ctx, cdkCfg.BaseDomainName)
 	if err != nil {
-		return nil
+		return nil //nolint:nilerr // best-effort: skip if DNS lookup fails
 	}
 
 	verified, err := checkDNSOnce(ctx, cdkCfg.BaseDomainName, expectedNS)
 	if err != nil || !verified {
-		return nil
+		return nil //nolint:nilerr // best-effort: skip if not yet delegated
 	}
 
 	cfg := config.Config{ProjectDir: dir}
 	cdkContext, err := readCDKContext(cfg)
 	if err != nil {
-		return nil
+		return nil //nolint:nilerr // best-effort: skip if context unreadable
 	}
 
 	if err := setDNSDelegatedFlag(cfg, cdkContext.prefix); err != nil {
