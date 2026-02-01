@@ -2,8 +2,6 @@
 #MISE description="Bump minor version and release"
 set -euo pipefail
 
-: "${GORELEASER_GITHUB_TOKEN:?GORELEASER_GITHUB_TOKEN must be set}"
-
 # Get latest tag, default to v0.0.0 if none exists
 latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
 
