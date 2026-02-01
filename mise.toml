@@ -1,5 +1,6 @@
 [env]
 _.file = ".env"
+
 EDITOR="code"
 
 [tools]
