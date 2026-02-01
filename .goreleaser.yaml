@@ -47,6 +47,8 @@ changelog:
       - "^test:"
 
 release:
+  env:
+    - GORELEASER_GITHUB_TOKEN
   footer: >-
 
     ---
