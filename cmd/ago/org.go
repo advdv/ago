@@ -11,6 +11,7 @@ func orgCmd() *cli.Command {
 			orgDestroyAccountCmd(),
 			orgDNSDelegateCmd(),
 			orgDNSUndelegateCmd(),
+			orgDNSVerifyCmd(),
 		},
 	}
 }

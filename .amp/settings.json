@@ -1,0 +1,5 @@
+{
+  "amp.permissions": [
+    { "tool": "Bash", "matches": { "cmd": "*golangci-lint*" }, "action": "allow"}
+  ]
+}

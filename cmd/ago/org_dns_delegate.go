@@ -379,18 +379,22 @@ const (
 	dnsRetryDelay      = 100 * time.Millisecond
 )
 
-func waitForDNSPropagation(
-	ctx context.Context, output io.Writer, baseDomainName string, expectedNS []string, timeout time.Duration,
-) error {
-	deadline := time.Now().Add(timeout)
-
-	resolver := &net.Resolver{
+func newPublicDNSResolver() *net.Resolver {
+	return &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			d := net.Dialer{Timeout: dnsQueryTimeout}
 			return d.DialContext(ctx, "udp", publicDNSServer)
 		},
 	}
+}
+
+func waitForDNSPropagation(
+	ctx context.Context, output io.Writer, baseDomainName string, expectedNS []string, timeout time.Duration,
+) error {
+	deadline := time.Now().Add(timeout)
+
+	resolver := newPublicDNSResolver()
 
 	expectedSet := make(map[string]bool, len(expectedNS))
 	for _, ns := range expectedNS {

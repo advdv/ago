@@ -1,5 +1,6 @@
 [tools]
 amp = "latest"
+aws-cli = { version = "latest", symlink_bins = "true" }
 go = "latest"
 golangci-lint = "latest"
 goreleaser = "latest"
