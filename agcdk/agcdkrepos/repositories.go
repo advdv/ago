@@ -25,8 +25,6 @@ import (
 //	  --query 'Stacks[0].Outputs[?OutputKey==`RepositoryURI`].OutputValue' --output text)
 const RepositoryURIOutputKey = "RepositoryURI"
 
-const defaultLifecycleMaxImages = 100
-
 // Repositories provides access to ECR repositories.
 type Repositories interface {
 	// MainRepository returns the main ECR repository for this region.
@@ -38,10 +36,6 @@ type Props struct {
 	// RepositoryName overrides the default repository name.
 	// If nil, uses "{qualifier}-main".
 	RepositoryName *string
-
-	// LifecycleMaxImages is the maximum number of images to retain.
-	// Defaults to 100 if not specified.
-	LifecycleMaxImages *float64
 }
 
 type repositories struct {
@@ -69,26 +63,20 @@ func New(scope constructs.Construct, props Props) Repositories {
 		repoName = jsii.String(fmt.Sprintf("%s-main", qualifier))
 	}
 
-	maxImages := props.LifecycleMaxImages
-	if maxImages == nil {
-		maxImages = jsii.Number(defaultLifecycleMaxImages)
-	}
-
 	con.repository = awsecr.NewRepository(scope, jsii.String("MainRepository"), &awsecr.RepositoryProps{
 		RepositoryName:     repoName,
-		ImageTagMutability: awsecr.TagMutability_IMMUTABLE,
+		ImageTagMutability: awsecr.TagMutability_IMMUTABLE_WITH_EXCLUSION,
 		RemovalPolicy:      awscdk.RemovalPolicy_DESTROY,
 		EmptyOnDelete:      jsii.Bool(true),
-		LifecycleRules: &[]*awsecr.LifecycleRule{{
-			MaxImageCount: maxImages,
-			Description:   jsii.String(fmt.Sprintf("Keep last %.0f images", *maxImages)),
-		}},
+		ImageTagMutabilityExclusionFilters: &[]awsecr.ImageTagMutabilityExclusionFilter{
+			awsecr.ImageTagMutabilityExclusionFilter_Wildcard(jsii.String("*-latest")),
+		},
 	})
 
 	if agcdkutil.IsPrimaryRegion(scope, region) {
 		awscdk.NewCfnOutput(stack, jsii.String(RepositoryURIOutputKey), &awscdk.CfnOutputProps{
 			Value:       con.repository.RepositoryUri(),
-			Description: jsii.String("ECR repository URI for ko (export as KO_DOCKER_REPO)"),
+			Description: jsii.String("ECR repository URI"),
 		})
 		cfg := agcdkutil.ConfigFromScope(scope)
 		destinations := make(
