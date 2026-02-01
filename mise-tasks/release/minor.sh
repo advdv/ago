@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Bump minor version and release"
+#MISE env.required=["GORELEASER_GITHUB_TOKEN"]
 set -euo pipefail
 
 # Get latest tag, default to v0.0.0 if none exists
