@@ -677,6 +677,10 @@ func doInit(ctx context.Context, opts InitOptions) error {
 		}
 	}
 
+	if err := trySetDNSDelegatedIfResolved(ctx, opts.Dir, opts.CDKConfig); err != nil {
+		return err
+	}
+
 	if err := exec.Mise(ctx, "ago", "dev", "fmt"); err != nil {
 		return errors.Wrap(err, "failed to run ago dev fmt")
 	}
@@ -823,6 +827,8 @@ func writeCDKContextJSON(cdkDir string, cfg CDKConfig) error {
 		"@aws-cdk/core:permissionsBoundary": map[string]string{
 			"name": cfg.Qualifier + "-permissions-boundary",
 		},
+		"cli-telemetry":              false,
+		"acknowledged-issue-numbers": []int{34892},
 	}
 
 	output, err := json.MarshalIndent(context, "", "  ")
@@ -1043,4 +1049,49 @@ func installAmpSkills(ctx context.Context, exec cmdexec.Executor) error {
 		}
 	}
 	return nil
+}
+
+func trySetDNSDelegatedIfResolved(ctx context.Context, dir string, cdkCfg CDKConfig) error {
+	if cdkCfg.BaseDomainName == "" {
+		return nil
+	}
+
+	expectedNS, err := lookupExpectedNSFromParent(ctx, cdkCfg.BaseDomainName)
+	if err != nil {
+		return nil
+	}
+
+	verified, err := checkDNSOnce(ctx, cdkCfg.BaseDomainName, expectedNS)
+	if err != nil || !verified {
+		return nil
+	}
+
+	cfg := config.Config{ProjectDir: dir}
+	cdkContext, err := readCDKContext(cfg)
+	if err != nil {
+		return nil
+	}
+
+	if err := setDNSDelegatedFlag(cfg, cdkContext.prefix); err != nil {
+		return errors.Wrap(err, "failed to set dns-delegated flag")
+	}
+
+	writeOutputf(os.Stdout, "DNS already resolving - set dns-delegated = true\n")
+	return nil
+}
+
+func lookupExpectedNSFromParent(ctx context.Context, baseDomainName string) ([]string, error) {
+	resolver := newPublicDNSResolver()
+
+	nsRecords, err := lookupNSWithRetry(ctx, resolver, baseDomainName)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]string, 0, len(nsRecords))
+	for _, ns := range nsRecords {
+		result = append(result, ns.Host)
+	}
+
+	return result, nil
 }
