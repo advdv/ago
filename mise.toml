@@ -1,4 +1,8 @@
+[env]
+_.file = ".env"
+
 [tools]
+1password-cli = "latest"
 amp = "latest"
 aws-cli = { version = "latest", symlink_bins = "true" }
 go = "latest"

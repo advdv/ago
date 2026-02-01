@@ -18,8 +18,7 @@ echo "Bumping version: ${latest_tag} → ${new_version}"
 git tag -a "$new_version" -m "Release $new_version"
 git push origin "$new_version"
 
-# Run goreleaser (expects GORELEASER_GITHUB_TOKEN env var)
-GITHUB_TOKEN="${GORELEASER_GITHUB_TOKEN}" goreleaser release --clean
+goreleaser release --clean
 
 # Clear mise cache so upgrade detects new version immediately
 mise cache clear
